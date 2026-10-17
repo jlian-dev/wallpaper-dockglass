@@ -108,6 +108,15 @@ canvas{touch-action:none;cursor:grab}
   body.live .info,body.live .bigbtn{display:none}
   body.live .panel{top:env(safe-area-inset-top,0px);bottom:auto;border-radius:0 0 18px 18px;opacity:.94}
 }
+/* ---------- v5: layout do celular sem sobreposição ----------
+   Antes o painel era "fixo" e a prévia dependia de uma medida feita por JavaScript, e as duas podiam se cruzar.
+   Agora tudo é uma coluna: a prévia ocupa o que sobra e o painel fica embaixo, então o CSS impede qualquer sobreposição. */
+@media (max-width:820px){
+  html,body{height:100%}
+  .app{position:fixed;inset:0;display:flex;flex-direction:column;gap:0;padding:env(safe-area-inset-top,0px) 0 0;min-height:0}
+  .stage{position:relative;left:auto;right:auto;top:auto;bottom:auto;flex:1 1 0;min-height:0;margin:8px;z-index:auto}
+  .panel{position:relative;left:auto;right:auto;bottom:auto;flex:none;margin:0;z-index:auto}
+}
 </style>
 </head>
 <body>
@@ -140,6 +149,10 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
     <label class="file"><b>Print da tela inicial (gabarito)</b><small id="nRef">Toque para escolher o print</small><input type="file" accept="image/*" id="fRef"></label>
     <div class="row"><label for="showRef">Mostrar print por cima</label><input type="checkbox" id="showRef" checked></div>
     <button id="btnLive" type="button" style="display:none;width:100%;margin-top:8px">Alinhar sobre a tela inicial</button>
+    <div class="row" id="rowAlvo" style="display:none;margin-top:8px"><label for="selAlvo">Aplicar em</label>
+      <select id="selAlvo" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
+        <option value="home">Tela inicial</option><option value="lock">Tela de bloqueio</option><option value="both">Ambas</option>
+      </select></div>
 
     </details>
     <details><summary>Papel de parede: tamanho, corte e desfoque</summary>
@@ -170,7 +183,8 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
     </details>
     <div class="bar">
       <button id="btnPeek" title="Segure para ver o resultado sem o print">Segure: sem print</button>
-      <button class="primary" id="btnExport">Baixar PNG</button>
+      <button id="btnExport">Baixar PNG</button>
+      <button class="primary" id="btnApply" style="display:none">Aplicar</button>
     </div>
   </aside>
 </main>
@@ -756,6 +770,30 @@ if (DO){
   liveBtn.addEventListener('click', alinhar);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pegarResultado(); });   // ao voltar para o app
   DO.addListener('done', d => aplicarResultado(d));
+}
+
+/* ---------- Aplicar direto como papel de parede (sem baixar nem salvar) ----------
+   Gera o PNG em tamanho real e entrega ao Android (WallpaperManager), no plugin DockOverlay. */
+const btnApply = document.getElementById('btnApply');
+if (DO){
+  document.getElementById('rowAlvo').style.display = 'flex';   // mostra "Aplicar em" e o botão (só existem no APK)
+  btnApply.style.display = '';
+  btnApply.addEventListener('click', async () => {
+    btnApply.disabled = true; btnApply.textContent = 'Aplicando…';
+    try {
+      draw(false, true);                                         // tamanho real, sem o print
+      const png = cv.toDataURL('image/png');
+      draw();                                                    // volta para a prévia leve
+      await DO.setWallpaper({ data: png.split(',')[1], target: document.getElementById('selAlvo').value });
+      alert('Papel de parede aplicado!');
+    } catch (err) {
+      draw();
+      alert('Não foi possível aplicar: ' + (err && err.message ? err.message : err));
+    }
+    btnApply.disabled = false; btnApply.textContent = 'Aplicar';
+  });
+} else {
+  document.getElementById('btnExport').classList.add('primary');   // no navegador, "Baixar PNG" é o botão principal
 }
 
 /* Arranque */

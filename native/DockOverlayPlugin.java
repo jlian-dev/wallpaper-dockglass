@@ -96,6 +96,32 @@ public class DockOverlayPlugin extends Plugin {
         });
     }
 
+    /** Aplica o PNG (base64) como papel de parede: target = "home", "lock" ou "both". */
+    @PluginMethod
+    public void setWallpaper(final PluginCall call) {
+        final String data = call.getString("data");
+        final String target = call.getString("target", "home");
+        if (data == null) { call.reject("sem imagem"); return; }
+        new Thread(() -> {                                   // fora da thread principal: decodificar é pesado
+            try {
+                byte[] bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT);
+                android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                if (bmp == null) { call.reject("imagem inválida"); return; }
+                android.app.WallpaperManager wallMgr = android.app.WallpaperManager.getInstance(getContext());
+                if (Build.VERSION.SDK_INT >= 24) {
+                    int sys = android.app.WallpaperManager.FLAG_SYSTEM, lock = android.app.WallpaperManager.FLAG_LOCK;
+                    int which = "lock".equals(target) ? lock : ("both".equals(target) ? (sys | lock) : sys);
+                    wallMgr.setBitmap(bmp, null, true, which);
+                } else {
+                    wallMgr.setBitmap(bmp);
+                }
+                call.resolve();
+            } catch (Exception ex) {
+                call.reject(String.valueOf(ex.getMessage()));
+            }
+        }).start();
+    }
+
     private void show(double ox, double oy, double ow, double oh, double orad, double outW, double outH) {
         Context ctx = getContext().getApplicationContext();
         removeViews();
