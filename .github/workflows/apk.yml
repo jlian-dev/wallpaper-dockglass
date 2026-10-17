@@ -14,6 +14,7 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - run: npm install
       - run: npx cap add android      # cria o projeto Android a partir de www/
+      - run: node patch-android.js    # janela translúcida (modo tela inicial ao vivo)
       - run: npx cap sync android     # copia o app e os plugins
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
