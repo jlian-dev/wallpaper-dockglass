@@ -1,9 +1,5 @@
 {
   "appId": "com.dockliquida.app",
   "appName": "Dock Líquida",
-  "webDir": "www",
-  "backgroundColor": "#00000000",
-  "android": {
-    "backgroundColor": "#00000000"
-  }
+  "webDir": "www"
 }

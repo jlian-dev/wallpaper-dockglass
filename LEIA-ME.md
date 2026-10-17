@@ -28,16 +28,15 @@ Edite `www/index.html` e rode `npx cap sync android` e o build de novo (ou faça
 - O APK "debug" serve para uso próprio. Para publicar na Play Store é preciso um build *release* assinado.
 - As configurações da dock ficam salvas no aparelho (localStorage do WebView).
 
-## Tela inicial ao vivo (experimental)
-Em vez de usar um print, o app fica transparente e mostra a tela inicial real por trás; só a dock é desenhada por cima.
-No app: aba **Imagens > Tela inicial ao vivo**. Para funcionar, o tema Android precisa ser translúcido:
+## Alinhar sobre a tela inicial real (sobreposição)
+Em vez de usar um print, o app mostra o contorno da dock e uma barra de ajuste POR CIMA da tela inicial verdadeira (como o BlurDock).
+No app: aba **Imagens > Alinhar sobre a tela inicial**. Na primeira vez ele pede a permissão "Exibir sobre outros apps".
+Na tela inicial: arraste o contorno ou escolha Y / X / Larg / Alt / Curv e use -10 / -1 / +1 / +10. Toque em **Concluir** para voltar ao app com os valores.
+Isso usa código nativo (pasta `native/`), instalado pelo `patch-android.js`:
 ```
 npm install
 npx cap add android
 node patch-android.js
 npx cap sync android
-npx cap open android
 ```
-(O workflow do GitHub já roda o `patch-android.js` sozinho.)
-Limites: o Android não deixa um app ler o layout nem fazer screenshot de outro app, então isto só mostra o que estiver por trás
-no momento em que o app é aberto. Abra o app tocando no ícone dele na tela inicial. O resultado varia conforme o launcher.
+(O workflow do GitHub já faz isso sozinho. Envie ao repositório: `native/`, `patch-android.js` e `www/index.html`.)

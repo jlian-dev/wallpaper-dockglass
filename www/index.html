@@ -139,7 +139,7 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
     <label class="file"><b>Papel de parede final</b><small id="nWall">Toque para escolher uma imagem</small><input type="file" accept="image/*" id="fWall"></label>
     <label class="file"><b>Print da tela inicial (gabarito)</b><small id="nRef">Toque para escolher o print</small><input type="file" accept="image/*" id="fRef"></label>
     <div class="row"><label for="showRef">Mostrar print por cima</label><input type="checkbox" id="showRef" checked></div>
-    <button id="btnLive" type="button" style="display:none;width:100%;margin-top:8px">Tela inicial ao vivo (experimental)</button>
+    <button id="btnLive" type="button" style="display:none;width:100%;margin-top:8px">Alinhar sobre a tela inicial</button>
 
     </details>
     <details><summary>Papel de parede: tamanho, corte e desfoque</summary>
@@ -715,6 +715,7 @@ addEventListener('resize', () => { sheetVar(); schedule(); });
 const liveBtn = document.getElementById('btnLive');
 if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) liveBtn.style.display = 'block';
 liveBtn.addEventListener('click', () => {
+  if (!document.body.classList.contains('live')) return;   // modo transparente antigo desativado (substituído pela sobreposição nativa)
   const on = document.body.classList.toggle('live');
   liveBtn.textContent = on ? 'Sair da tela inicial ao vivo' : 'Tela inicial ao vivo (experimental)';
   document.getElementById('outMode').value = on ? 'custom' : 'auto';
@@ -725,6 +726,37 @@ liveBtn.addEventListener('click', () => {
   }
   applySize(); syncInputs(); schedule();
 });
+
+/* ---------- Alinhar sobre a tela inicial REAL (sobreposição nativa do Android) ----------
+   O plugin DockOverlay (Java, instalado pelo patch-android.js) mostra o contorno da dock e uma barra de
+   ajuste POR CIMA da tela inicial verdadeira. Ao tocar em "Concluir", os valores voltam para cá. */
+const DO = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.DockOverlay;
+async function alinhar(){
+  const { granted } = await DO.hasPermission();               // precisa de "Exibir sobre outros apps"
+  if (!granted){
+    await DO.requestPermission();
+    alert('Ative "Exibir sobre outros apps" para o Dock Líquida, volte ao app e toque em Alinhar de novo.');
+    return;
+  }
+  if (!ref){                                                  // sem print: usa a resolução física do aparelho
+    document.getElementById('outMode').value = 'custom';
+    document.getElementById('outW').value = Math.round(screen.width * devicePixelRatio);
+    document.getElementById('outH').value = Math.round(screen.height * devicePixelRatio);
+  }
+  applySize(); syncInputs(); schedule();
+  await DO.start({ x: state.x, y: state.y, w: state.w, h: state.h, r: state.r, outW: OUT.w, outH: OUT.h });   // abre a sobreposição e vai para a tela inicial
+}
+function aplicarResultado(json){                              // valores ajustados na sobreposição voltam para o app
+  const v = typeof json === 'string' ? JSON.parse(json) : json;
+  ['x','y','w','h','r'].forEach(k => { if (typeof v[k] === 'number') state[k] = v[k]; });
+  syncInputs(); schedule();
+}
+async function pegarResultado(){ const r = await DO.getResult(); if (r.result) aplicarResultado(r.result); }
+if (DO){
+  liveBtn.addEventListener('click', alinhar);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pegarResultado(); });   // ao voltar para o app
+  DO.addListener('done', d => aplicarResultado(d));
+}
 
 /* Arranque */
 setWall(wall);

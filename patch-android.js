@@ -1,12 +1,16 @@
 // Rode DEPOIS de "npx cap add android" e ANTES de "npx cap sync android".
-// Torna a janela do app translúcida, para a tela inicial verdadeira aparecer por trás
-// (usado pelo botão "Tela inicial ao vivo" do app).
-const fs = require('fs');
-const f = 'android/app/src/main/res/values/styles.xml';
-let s = fs.readFileSync(f, 'utf8');
-if (s.includes('windowIsTranslucent')) { console.log('já aplicado'); process.exit(0); }
-const novo = s.replace(/(<style name="AppTheme\.NoActionBar"[^>]*>)/,
-  '$1\n        <item name="android:windowIsTranslucent">true</item>\n        <item name="android:windowBackground">@android:color/transparent</item>');
-if (novo === s) { console.error('Não achei AppTheme.NoActionBar em ' + f); process.exit(1); }
-fs.writeFileSync(f, novo);
-console.log('OK: tema translúcido aplicado');
+// 1) copia o plugin nativo (sobreposição para alinhar a dock) e a MainActivity que o registra;
+// 2) pede a permissão "Exibir sobre outros apps" no AndroidManifest.
+const fs = require('fs'), path = require('path');
+const dir = 'android/app/src/main/java/com/dockliquida/app';   // pacote = appId do capacitor.config.json
+fs.mkdirSync(dir, { recursive: true });
+for (const f of ['MainActivity.java', 'DockOverlayPlugin.java']) {
+  fs.copyFileSync(path.join('native', f), path.join(dir, f));
+}
+const mf = 'android/app/src/main/AndroidManifest.xml';
+let m = fs.readFileSync(mf, 'utf8');
+if (!m.includes('SYSTEM_ALERT_WINDOW')) {
+  m = m.replace('</manifest>', '    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />\n</manifest>');
+  fs.writeFileSync(mf, m);
+}
+console.log('OK: plugin DockOverlay e permissão aplicados');
