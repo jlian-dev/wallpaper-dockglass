@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover deixa a página ocupar a tela toda no telemóvel -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dock Líquida</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* ---------- CORES (tokens): claro por padrão, escuro quando o sistema pedir ---------- */
+:root{--bg:#eef0f3;--panel:#fff;--line:#d9dde3;--text:#15181d;--mute:#5b6370;--acc:#1e7fd6;--stage:#dfe3e9;
+  box-sizing:border-box;
+  /* afasta o conteúdo das barras do sistema (notch / barra inferior) */
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101216;--panel:#181b21;--line:#2a2f38;--text:#e9ecf1;--mute:#98a1af;--acc:#7cc4ff;--stage:#0b0d10}}
+:root[data-theme="dark"]{--bg:#101216;--panel:#181b21;--line:#2a2f38;--text:#e9ecf1;--mute:#98a1af;--acc:#7cc4ff;--stage:#0b0d10}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 15px/1.45 Manrope,system-ui,sans-serif}
+
+/* ---------- LAYOUT: palco à esquerda, controlos à direita (empilha no telemóvel) ---------- */
+.app{display:grid;grid-template-columns:1fr 340px;gap:16px;padding:16px;min-height:100vh}
+.stage{background:var(--stage);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;min-height:60vh}
+/* o canvas tem a resolução real da imagem; o CSS só reduz a exibição */
+canvas{max-width:100%;max-height:80vh;width:auto;height:auto;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.info{color:var(--mute);font-size:13px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:14px;align-self:start}
+h1{font-size:20px;font-weight:800;margin:0}
+h2{font-size:14px;font-weight:600;margin:4px 0 0;color:var(--mute)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+label{font-size:14px}
+.file{display:block;border:1px dashed var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;font-size:14px}
+.file:hover,.file:focus-within{border-color:var(--acc)}
+.file input{display:none}
+.step{display:flex;align-items:center;gap:4px}
+.step input{width:64px;text-align:center;background:transparent;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 2px;font:inherit}
+button{font:inherit;color:var(--text);background:transparent;border:1px solid var(--line);border-radius:8px;min-width:34px;padding:6px 8px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.primary{background:var(--acc);color:#06121f;border:0;font-weight:800;padding:12px;border-radius:12px;width:100%}
+input[type=range]{width:100%;accent-color:var(--acc)}
+@media (max-width:820px){.app{grid-template-columns:1fr}}
+/* ---------- v2: interface refinada ---------- */
+.app{grid-template-columns:1fr 360px}
+/* o painel fica fixo na tela e rola por dentro; a prévia nunca sai de vista */
+.panel{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;gap:0;padding:0}
+.panel h1{padding:16px 16px 8px}
+/* seções recolhíveis */
+details{border-top:1px solid var(--line);padding:0 16px 12px}
+summary{cursor:pointer;font-weight:800;font-size:14px;padding:12px 0 8px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--mute);font-weight:400;font-size:20px}
+details[open] summary::after{content:"−"}
+/* cartões de upload mostram o nome do arquivo escolhido */
+.file{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.file small{color:var(--mute);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* valor atual ao lado do nome de cada slider */
+.lv{display:flex;justify-content:space-between}
+.lv output{color:var(--acc);font-variant-numeric:tabular-nums;font-size:13px}
+/* barra de ações sempre visível no fim do painel */
+.bar{position:sticky;bottom:0;display:flex;gap:8px;padding:12px 16px;background:var(--panel);border-top:1px solid var(--line)}
+.bar button{flex:1}
+.bar .primary{flex:2;width:auto}
+.stage{background:radial-gradient(circle at 50% 30%,var(--panel),var(--stage))}
+canvas{touch-action:none;cursor:grab}
+@media (max-width:820px){
+  .app{grid-template-columns:1fr;gap:10px;padding:10px}
+  /* no celular a prévia fica fixa no topo enquanto você rola os controles */
+  .stage{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;min-height:0;padding:10px}
+  canvas{max-height:38vh}
+  .panel{position:static;max-height:none;overflow:visible}
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <!-- PALCO: aqui aparece o resultado -->
+  <section class="stage">
+    <canvas id="cv"></canvas>
+    <div class="info" id="info"></div>
+    <div class="info">Arraste a dock na imagem para movê-la; use −1 / +1 para o ajuste fino.</div>
+  </section>
+
+  <!-- PAINEL DE CONTROLOS -->
+  <aside class="panel" id="panel">
+    <h1>Dock Líquida</h1>
+
+    <details open><summary>Imagens</summary>
+    <label class="file"><b>Papel de parede final</b><small id="nWall">Toque para escolher uma imagem</small><input type="file" accept="image/*" id="fWall"></label>
+    <label class="file"><b>Print da tela inicial (gabarito)</b><small id="nRef">Toque para escolher o print</small><input type="file" accept="image/*" id="fRef"></label>
+    <div class="row"><label for="showRef">Mostrar print por cima</label><input type="checkbox" id="showRef" checked></div>
+
+    </details>
+    <details><summary>Papel de parede: tamanho, corte e desfoque</summary>
+    <select id="outMode" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
+      <option value="auto">Igual ao print (ou à imagem, sem print)</option>
+      <option value="custom">Personalizado</option>
+    </select>
+    <div class="row"><label for="outW">Largura × Altura</label>
+      <div class="step"><input type="number" id="outW"><input type="number" id="outH"></div></div>
+    <div id="fitSliders"></div>
+
+    </details>
+    <details open><summary>Posição da dock (precisão de 1 px)</summary>
+    <div id="steppers"></div>
+
+    </details>
+    <details><summary>Efeito de vidro</summary>
+    <label>Formato do bisel
+      <select data-k="profile" style="width:100%;margin:6px 0 10px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
+        <option value="squircle">Squircle (estilo Apple)</option>
+        <option value="circle">Círculo</option>
+        <option value="lip">Lip (borda alta, centro côncavo)</option>
+        <option value="concave">Côncavo</option>
+      </select></label>
+    <div id="sliders"></div>
+
+    <button id="btnReset" style="width:100%;margin-top:6px">Repor valores padrão</button>
+    </details>
+    <div class="bar">
+      <button id="btnPeek" title="Segure para ver o resultado sem o print">Segure: sem print</button>
+      <button class="primary" id="btnExport">Baixar PNG</button>
+    </div>
+  </aside>
+</main>
+
+<script>
+/* =====================================================================
+   1. ESTADO: todos os números que o utilizador controla ficam aqui.
+   Mudou um número? Redesenhamos tudo a partir deste objeto.
+   ===================================================================== */
+const state = {
+  x: 0,          // deslocamento horizontal em relação ao centro (px)
+  y: 0,          // distância do topo da dock até o topo da imagem (px)
+  w: 0, h: 0,    // largura e altura da dock (px)
+  r: 0,          // raio da curvatura dos cantos (px)
+  refOpacity: 50,// opacidade do print de referência (0–100)
+  blur: 18,      // desfoque do fundo atrás do vidro (px)
+  ior: 1.5,      // índice de refração do vidro (1 = ar, 1.5 = vidro)
+  thick: 60,     // espessura do vidro (px)
+  scale: 100,    // escala da refração (%)
+  chroma: 8,     // aberração cromática (%)
+  angle: -60,    // direção da luz do reflexo (graus)
+  profile: 'squircle', // formato da superfície do bisel
+  wpBlur: 0,        // desfoque do papel de parede inteiro (px)
+  zoom: 100,     // zoom do papel de parede dentro do quadro (%; 100 = só o corte mínimo)
+  panX: 0,       // enquadramento horizontal (-100 a 100)
+  panY: 0,       // enquadramento vertical (-100 a 100)
+  bevel: 34,     // largura do bisel, a faixa de borda que "entorta" a luz (px)
+  shine: 60      // intensidade do brilho especular (0–100)
+};
+
+// Lista que gera os botões -1 / +1 (chave do estado, rótulo na tela)
+const STEPPERS = [['y','Posição Y'],['x','Posição X'],['w','Largura'],['h','Altura'],['r','Curvatura']];
+// Lista que gera os sliders (chave, rótulo, mínimo, máximo)
+const SLIDERS = [['refOpacity','Opacidade do print',0,100],['blur','Desfoque do vidro',0,60],
+                 ['bevel','Largura do bisel',8,150],['thick','Espessura do vidro',4,200],
+                 ['ior','Índice de refração',1,2,0.01],['scale','Escala da refração',0,150],
+                 ['chroma','Aberração cromática',0,30],['shine','Brilho especular',0,100],['angle','Ângulo da luz',-180,180]];
+
+const cv = document.getElementById('cv');       // elemento <canvas>
+const ctx = cv.getContext('2d');                // "caneta" para desenhar nele
+let wall = makeDefaultWall();                   // imagem de fundo (começa com um degradê)
+let ref = null;                                 // print de referência (começa vazio)
+
+/* =====================================================================
+   2. PAPEL DE PAREDE PADRÃO: um degradê para a ferramenta funcionar
+   mesmo antes de carregares uma imagem (tamanho de um iPhone 15).
+   ===================================================================== */
+function makeDefaultWall(){
+  const c = document.createElement('canvas'); c.width = 1179; c.height = 2556;
+  const g = c.getContext('2d');
+  const lin = g.createLinearGradient(0,0,1179,2556);   // degradê diagonal
+  lin.addColorStop(0,'#ff7a59'); lin.addColorStop(.5,'#7a4dff'); lin.addColorStop(1,'#12c2e9');
+  g.fillStyle = lin; g.fillRect(0,0,1179,2556);
+  const glow = g.createRadialGradient(300,2300,20,300,2300,700);  // mancha de luz perto da dock
+  glow.addColorStop(0,'rgba(255,255,255,.7)'); glow.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle = glow; g.fillRect(0,0,1179,2556);
+  return c;
+}
+
+/* Tamanho de saída: o do print (o tamanho real do ecrã), o da imagem, ou o que escreveres.
+   Ao mudar de tamanho, a dock é reescalada na mesma proporção para não "fugir". */
+function applySize(){
+  const oW = document.getElementById('outW'), oH = document.getElementById('outH');
+  const custom = document.getElementById('outMode').value === 'custom';
+  oW.disabled = oH.disabled = !custom;                       // no modo automático os campos só mostram o tamanho
+  let W, H;
+  if (custom){
+    W = Math.min(8192, Math.max(64, Math.round(+oW.value) || cv.width));   // limites seguros do canvas
+    H = Math.min(8192, Math.max(64, Math.round(+oH.value) || cv.height));
+  } else {
+    [W, H] = sizeOf(ref || wall);                            // print tem prioridade; senão a própria imagem
+  }
+  oW.value = W; oH.value = H;
+  if ((W !== cv.width || H !== cv.height) && cv.width > 0){
+    const fx = W/cv.width, fy = H/cv.height;                 // fatores de escala horizontal e vertical
+    ['x','w','r','bevel','thick','blur','wpBlur'].forEach(k => state[k] = Math.round(state[k]*fx));
+    ['y','h'].forEach(k => state[k] = Math.round(state[k]*fy));
+  }
+  cv.width = W; cv.height = H;
+}
+
+/* Desenha uma imagem no modo "cobrir": ela é ampliada só até preencher o quadro e o
+   excesso é cortado. A proporção original NUNCA muda, então não há esticar.
+   fixed = true ignora zoom e enquadramento (usado no print). */
+/* Cache do fundo: papel de parede já cortado e desfocado fica guardado num canvas
+   e só é refeito quando algo dele muda (assim arrastar a dock não recalcula o desfoque). */
+const baseCv = document.createElement('canvas');
+let baseKey = '', wallId = 0;
+function drawCover(img, fixed, c = ctx){
+  const [iw, ih] = sizeOf(img);
+  const s = Math.max(cv.width/iw, cv.height/ih) * (fixed ? 1 : state.zoom/100 * (1 + 4*state.wpBlur/Math.min(cv.width, cv.height)));  // com desfoque, amplia um pouco para as bordas não ficarem transparentes
+  // // escala única nos dois eixos
+  const dw = iw*s, dh = ih*s;                                  // tamanho da imagem já escalada
+  const px = fixed ? 0 : state.panX/100, py = fixed ? 0 : state.panY/100;
+  const dx = (cv.width - dw)/2 - px*(dw - cv.width)/2;         // 0 = centrado; ±100 = encosta na borda
+  const dy = (cv.height - dh)/2 - py*(dh - cv.height)/2;
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+  c.filter = (!fixed && state.wpBlur > 0) ? `blur(${state.wpBlur}px)` : 'none';   // desfoque só no papel de parede
+  c.drawImage(img, dx, dy, dw, dh);
+  c.filter = 'none';
+}
+
+/* Tamanho real de qualquer fonte de imagem (canvas, bitmap...) */
+const sizeOf = s => [s.naturalWidth || s.width, s.naturalHeight || s.height];
+
+/* Define uma dock inicial proporcional ao tamanho do papel de parede */
+function resetDock(){
+  const W = cv.width, H = cv.height;   // usa o tamanho do quadro de saída (print ou personalizado)
+  state.w = Math.round(W*0.9);
+  state.h = Math.round(W*0.2);
+  state.x = 0;
+  state.y = H - state.h - Math.round(H*0.025);   // perto da base da tela
+  state.r = Math.round(state.h*0.36);
+  state.bevel = Math.round(state.h*0.35);        // bisel ≈ 1/3 da altura da dock
+  state.thick = Math.round(state.bevel*1.2);     // espessura do vidro proporcional ao bisel
+  state.blur = Math.round(W*0.012);              // desfoque proporcional ao tamanho da imagem
+}
+
+/* Usa uma nova imagem como papel de parede: o canvas passa a ter a resolução dela */
+function setWall(img){
+  wall = img; wallId++;                          // wallId invalida o cache do fundo
+  state.zoom = 100; state.panX = 0; state.panY = 0;   // novo papel de parede: enquadramento padrão
+  applySize();           // define o tamanho de saída (print, imagem ou personalizado)
+  if (needReset){ resetDock(); needReset = false; }  // só na primeira vez: depois a dock ajustada é mantida
+  syncInputs(); draw();
+}
+
+/* =====================================================================
+   3. DESENHO: a cada mudança, repintamos tudo na ordem certa
+   ===================================================================== */
+function draw(showRef = state.showRef !== false){
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0,0,W,H);
+  const key = [W, H, state.zoom, state.panX, state.panY, state.wpBlur, wallId].join('|');   // "assinatura" do fundo
+  if (key !== baseKey){ baseCv.width = W; baseCv.height = H; drawCover(wall, false, baseCv.getContext('2d')); baseKey = key; }
+  ctx.drawImage(baseCv, 0, 0);               // 1) papel de parede
+  drawDock();                                    // 2) dock de vidro
+  if (showRef && ref){                           // 3) print por cima, semitransparente
+    ctx.globalAlpha = state.refOpacity/100;
+    drawCover(ref, true);
+    ctx.globalAlpha = 1;
+  }
+  // Aviso de qualidade: escala > 1 significa que a imagem original é menor que o quadro e foi ampliada
+  const sc = Math.max(W/sizeOf(wall)[0], H/sizeOf(wall)[1]) * state.zoom/100;
+  document.getElementById('info').textContent = W + ' × ' + H + ' px · ' +
+    (sc > 1.001 ? 'papel de parede ampliado ' + sc.toFixed(2) + '×: pode perder nitidez' : 'sem ampliação, nitidez total');
+  saveSoon();
+}
+
+/* =====================================================================
+   2b. REFRAÇÃO FÍSICA (método do artigo https://kube.io/blog/liquid-glass-css-svg/)
+   Em vez de "empurrar" pixels à vontade, simulamos 128 raios de luz que
+   atravessam o vidro, do ponto da borda até o fim do bisel, e guardamos
+   quanto cada raio se desvia. Depois só consultamos essa tabela.
+   ===================================================================== */
+// Altura do vidro (0 a 1) em função da distância à borda x (0 = borda, 1 = fim do bisel)
+const squircle = x => Math.pow(1 - Math.pow(1-x,4), 1/4);      // curva suave que a Apple usa
+const PROFILES = {
+  squircle,
+  circle:  x => Math.sqrt(1 - (1-x)*(1-x)),                      // cúpula esférica (transição mais dura)
+  concave: x => 1 - squircle(x),                                 // tigela: empurra a luz para fora
+  lip:     x => { const t = x*x*x*(x*(x*6-15)+10);               // smootherstep: mistura convexo e côncavo
+                  return squircle(x)*(1-t) + (1-squircle(x))*t; }
+};
+
+function buildTable(profile, bevel, thick, ior){
+  const f = PROFILES[profile] || squircle;
+  const eta = 1/ior;                                  // razão n1/n2 (ar → vidro)
+  const table = [];
+  for (let i=0; i<128; i++){
+    const x = i/127;
+    const a = Math.max(0,x-0.001), b = Math.min(1,x+0.001);
+    // inclinação da superfície (derivada numérica), convertida de unidades normalizadas para px
+    const slope = (f(b)-f(a))/(b-a) * thick/bevel;
+    const len = Math.hypot(slope,1);
+    const nx = -slope/len, nz = 1/len;               // normal da superfície (vetor unitário)
+    const cosi = nz;                                  // raio incidente vertical I=(0,-1): cos = -(N·I)
+    const k = 1 - eta*eta*(1-cosi*cosi);
+    const c = eta*cosi - Math.sqrt(Math.max(0,k));   // lei de Snell em forma vetorial
+    const tx = c*nx, tz = -eta + c*nz;               // direção do raio refratado
+    const z = thick*f(x);                             // altura do vidro neste ponto
+    // desvio lateral = quanto o raio anda de lado até chegar ao fundo (altura z)
+    table.push(tz < -1e-6 ? tx*z/(-tz) : 0);
+  }
+  return table;                                       // positivo = o fundo visto vem de mais para dentro
+}
+
+/* Caminho de um retângulo arredondado (usado só para a sombra) */
+function roundRectPath(x,y,w,h,r){
+  ctx.beginPath(); ctx.roundRect(x,y,w,h,r);
+}
+
+function drawDock(){
+  const w = state.w, h = state.h;
+  const r = Math.min(state.r, w/2, h/2);        // o raio nunca passa de metade do lado menor
+  const left = Math.round(cv.width/2 + state.x - w/2);  // x = 0 significa "centrada"
+  const top = state.y;
+
+  // --- Sombra suave sob a dock (encolhida 1px para não sujar a borda) ---
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.35)';
+  ctx.shadowBlur = h*0.25;
+  ctx.shadowOffsetY = h*0.08;
+  ctx.fillStyle = '#000';
+  roundRectPath(left+1, top+1, w-2, h-2, Math.max(r-1,0));
+  ctx.fill();
+  ctx.restore();
+
+  // --- Região de trabalho = dock + margem (para o desfoque e a refração) ---
+  const bevel = Math.min(state.bevel, h/2);                          // bisel não passa de metade da altura
+  const table = buildTable(state.profile, bevel, state.thick, state.ior); // tabela de refração
+  const maxD = Math.max(...table.map(Math.abs)) * state.scale/100;   // maior desvio possível (px)
+  const M = Math.ceil(state.blur*2 + maxD) + 4;
+  const bx = left - M, by = top - M, bw = w + 2*M, bh = h + 2*M;
+
+  // --- Passo A: cópia DESFOCADA do fundo, só da região da dock ---
+  const src = document.createElement('canvas'); src.width = bw; src.height = bh;
+  const sc = src.getContext('2d');
+  sc.filter = `blur(${state.blur}px) saturate(1.5) brightness(1.06)`; // vidro desfoca e realça cor
+  sc.drawImage(baseCv, -bx, -by);   // o vidro refrata o MESMO fundo que aparece na tela (cortado e desfocado)
+  const sd = sc.getImageData(0,0,bw,bh).data;   // pixels da cópia desfocada
+
+  // --- Passo B: calcular cada pixel do vidro ---
+  const out = new ImageData(bw,bh), od = out.data;      // imagem de saída (vazia)
+  const cx = bw/2, cy = bh/2;                           // centro da dock na região
+  const hx = w/2 - r, hy = h/2 - r;                     // "miolo" reto do retângulo
+  const bev = Math.min(state.bevel, h/2);               // bisel não pode passar da metade da altura
+  const shine = state.shine/100;
+  const ang = state.angle*Math.PI/180, LX = Math.cos(ang), LY = Math.sin(ang); // direção da luz
+  const rimW = Math.max(1.5, 2.5*cv.width/1179);        // espessura do fio de luz, proporcional à imagem
+
+  for (let py=0; py<bh; py++){
+    for (let px=0; px<bw; px++){
+      // Distância assinada à borda (SDF): negativa = dentro, positiva = fora
+      const dx = px+0.5-cx, dy = py+0.5-cy;
+      const qx = Math.abs(dx)-hx, qy = Math.abs(dy)-hy;
+      const ox = Math.max(qx,0), oy = Math.max(qy,0);
+      const len = Math.hypot(ox,oy);
+      const dist = len + Math.min(Math.max(qx,qy),0) - r;
+      if (dist > 0.5) continue;                         // fora da dock: não pinta
+
+      // Normal externa: direção para onde a borda "aponta" neste pixel
+      let nx, ny;
+      if (len > 0){ nx = ox/len*Math.sign(dx); ny = oy/len*Math.sign(dy); } // cantos
+      else if (qx > qy){ nx = Math.sign(dx); ny = 0; }                      // laterais
+      else { nx = 0; ny = Math.sign(dy); }                                  // topo/base
+
+      const depth = -dist;                              // distância da borda para dentro
+      const idx = Math.min(127, Math.floor(depth/bevel*127)); // posição na tabela (0 = borda, 127 = fim do bisel)
+      const disp = depth < bevel ? table[idx]*state.scale/100 : 0;                     // desvio em px (0 no miolo plano do vidro)
+
+      // Refração com aberração cromática: R, G e B amostram posições levemente diferentes
+      const i = (py*bw+px)*4;
+      const col = [0,0,0];
+      for (let c=0; c<3; c++){
+        const k = disp*(1 + (c-1)*state.chroma/100);                // R desvia menos, B mais (aberração cromática)
+        const sx = Math.min(bw-1, Math.max(0, Math.round(px - nx*k)));
+        const sy = Math.min(bh-1, Math.max(0, Math.round(py - ny*k)));
+        col[c] = sd[(sy*bw+sx)*4 + c];
+      }
+
+      // Película branca translúcida, mais forte no topo (como vidro fosco)
+      const tint = 0.08 + 0.10*(1 - Math.min(1,Math.max(0,(py-M)/h)));
+
+      // Brilho especular: luz vinda do canto superior esquerdo
+      const dot = nx*LX + ny*LY;    // 1 = borda virada para a luz, -1 = lado oposto
+      const rim = depth < rimW ? 1 - depth/rimW : 0;      // fio de luz fino colado na borda
+      const lum = 0.3*col[0] + 0.59*col[1] + 0.11*col[2];            // luminosidade do pixel (base para saturar o reflexo)
+      const hl = rim * (0.2 + 0.8*Math.abs(dot)) * (dot > 0 ? 1 : 0.6) * shine;
+
+      for (let c=0; c<3; c++){
+        let v = col[c]*(1-tint) + 255*tint;             // mistura com branco
+        const sat = Math.min(255, Math.max(0, lum + (col[c]-lum)*2.5)); // cor do pixel com saturação reforçada
+        v = v*(1-hl) + (127.5 + 0.5*sat)*hl;                    // mistura o reflexo (branco + cor saturada)
+        od[i+c] = v;
+      }
+      od[i+3] = Math.min(1, Math.max(0, 0.5 - dist))*255; // alfa: suaviza a serrilha da borda
+    }
+  }
+
+  // --- Passo C: colocar o resultado no canvas principal ---
+  const tmp = document.createElement('canvas'); tmp.width = bw; tmp.height = bh;
+  tmp.getContext('2d').putImageData(out,0,0);           // putImageData ignora transparência, por isso o canvas temporário
+  ctx.drawImage(tmp, bx, by);                           // drawImage respeita o alfa
+}
+
+/* Agenda 1 redesenho por quadro: evita travar quando arrastas um slider */
+let queued = false;
+function schedule(){
+  if (queued) return; queued = true;
+  requestAnimationFrame(()=>{ queued = false; draw(); });
+}
+
+/* =====================================================================
+   4. INTERFACE: cria os controlos e liga os eventos
+   ===================================================================== */
+document.getElementById('steppers').innerHTML = STEPPERS.map(([k,l]) => `
+  <div class="row" style="margin-bottom:8px"><label for="n-${k}">${l}</label>
+    <div class="step">
+      <button data-k="${k}" data-d="-1" aria-label="${l} menos 1">−1</button>
+      <input type="number" id="n-${k}" data-k="${k}">
+      <button data-k="${k}" data-d="1" aria-label="${l} mais 1">+1</button>
+    </div></div>`).join('');
+
+document.getElementById('sliders').innerHTML = SLIDERS.map(([k,l,mn,mx,st=1]) => `
+  <div style="margin-bottom:6px"><label for="s-${k}">${l}</label>
+  <input type="range" id="s-${k}" data-k="${k}" min="${mn}" max="${mx}" step="${st}"></div>`).join('');
+
+/* Sliders de enquadramento (mesma lógica dos outros: data-k liga ao estado) */
+const FIT = [['wpBlur','Desfoque do papel de parede',0,60],['zoom','Zoom (corta mais)',100,400],['panX','Mover na horizontal',-100,100],['panY','Mover na vertical',-100,100]];
+document.getElementById('fitSliders').innerHTML = FIT.map(([k,l,mn,mx]) => `
+  <div style="margin-bottom:6px"><label for="s-${k}">${l}</label>
+  <input type="range" id="s-${k}" data-k="${k}" min="${mn}" max="${mx}"></div>`).join('');
+
+/* Mostra o valor atual ao lado do rótulo de cada slider */
+function showVal(el){
+  if (el.type !== 'range') return;
+  const lab = el.previousElementSibling;               // o <label> logo acima do slider
+  let o = lab.querySelector('output');
+  if (!o){ o = document.createElement('output'); lab.append(o); lab.classList.add('lv'); }
+  o.textContent = el.value;
+}
+
+/* Copia o estado para os campos (usado depois de carregar imagem) */
+function syncInputs(){
+  document.querySelectorAll('#panel input[data-k], #panel select[data-k]').forEach(el => { el.value = state[el.dataset.k]; showVal(el); });
+}
+
+const panel = document.getElementById('panel');
+// Clique nos botões −1 / +1: soma ao valor e redesenha
+panel.addEventListener('click', e => {
+  const b = e.target.closest('button[data-d]'); if (!b || e.detail !== 0) return; // toque/clique do mouse é tratado no pointerdown (repete ao segurar); aqui só o teclado
+  state[b.dataset.k] += Number(b.dataset.d);
+  syncInputs(); schedule();
+});
+// Digitar num campo ou mexer num slider: atualiza o estado
+panel.addEventListener('input', e => {
+  const el = e.target; if (!el.dataset.k) return;
+  state[el.dataset.k] = el.tagName === 'SELECT' ? el.value : Number(el.value); // select devolve texto
+  showVal(el);
+  schedule();
+});
+// Caixa "Mostrar print"
+document.getElementById('showRef').addEventListener('change', e => { state.showRef = e.target.checked; schedule(); });
+
+/* Carregar imagens: createImageBitmap respeita a rotação das fotos de telemóvel */
+document.getElementById('fWall').addEventListener('change', async e => {
+  if (e.target.files[0]) { setWall(await createImageBitmap(e.target.files[0])); document.getElementById('nWall').textContent = '✓ ' + e.target.files[0].name; }
+});
+document.getElementById('fRef').addEventListener('change', async e => {
+  if (e.target.files[0]) { ref = await createImageBitmap(e.target.files[0]); applySize(); syncInputs(); draw();
+    document.getElementById('nRef').textContent = '✓ ' + e.target.files[0].name; }
+});
+
+/* Exportar: desenha SEM o print, baixa o PNG e volta ao modo de edição */
+document.getElementById('btnExport').addEventListener('click', () => {
+  draw(false);
+  cv.toBlob(blob => {
+    const P = window.Capacitor && Capacitor.Plugins;
+    if (P && P.Filesystem && P.Share && Capacitor.isNativePlatform()){   // dentro do APK: downloads por blob não funcionam, então abre o menu Compartilhar
+      const r = new FileReader();
+      r.onload = async () => {
+        try {
+          const f = await P.Filesystem.writeFile({ path: 'wallpaper-liquid-glass.png', data: r.result.split(',')[1], directory: 'CACHE' });
+          await P.Share.share({ files: [f.uri], dialogTitle: 'Salvar wallpaper' });   // escolha Fotos / Galeria / Arquivos
+        } catch (err) { console.error(err); }
+        draw();
+      };
+      r.readAsDataURL(blob); return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'wallpaper-liquid-glass.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    draw();                                       // restaura a pré-visualização
+  }, 'image/png');
+});
+
+/* Mudou o modo ou o tamanho personalizado: recalcula o quadro e redesenha */
+['outMode','outW','outH'].forEach(id => document.getElementById(id).addEventListener('change', () => { applySize(); syncInputs(); draw(); }));
+
+/* Segurar os botões −1 / +1 repete o ajuste (espera 350 ms, depois repete a cada 60 ms) */
+let hold;
+panel.addEventListener('pointerdown', e => {
+  const b = e.target.closest('button[data-d]'); if (!b) return;
+  const step = () => { state[b.dataset.k] += Number(b.dataset.d); syncInputs(); schedule(); };
+  step();                                                     // primeiro ajuste imediato
+  hold = setTimeout(function rep(){ step(); hold = setTimeout(rep, 60); }, 350);
+});
+['pointerup','pointercancel','pointerleave'].forEach(t => panel.addEventListener(t, () => clearTimeout(hold)));
+
+/* Arrastar a dock direto na imagem (mouse ou dedo) */
+let drag = null;
+const toCanvas = e => {                                        // converte a posição da tela para pixels do canvas
+  const r = cv.getBoundingClientRect();
+  return [(e.clientX - r.left)*cv.width/r.width, (e.clientY - r.top)*cv.height/r.height];
+};
+cv.addEventListener('pointerdown', e => {
+  const [px, py] = toCanvas(e), left = cv.width/2 + state.x - state.w/2;
+  if (px < left || px > left + state.w || py < state.y || py > state.y + state.h) return; // só se clicou na dock
+  drag = { px, py, x: state.x, y: state.y };
+  cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing';
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const [px, py] = toCanvas(e);
+  state.x = Math.round(drag.x + px - drag.px);                // move pelo mesmo tanto que o ponteiro andou
+  state.y = Math.round(drag.y + py - drag.py);
+  syncInputs(); schedule();
+});
+['pointerup','pointercancel'].forEach(t => cv.addEventListener(t, () => { drag = null; cv.style.cursor = ''; }));
+
+/* Botão "Segure: sem print": enquanto pressionado mostra o resultado limpo */
+const peek = document.getElementById('btnPeek');
+peek.addEventListener('pointerdown', () => draw(false));
+['pointerup','pointerleave','pointercancel'].forEach(t => peek.addEventListener(t, () => draw()));
+
+/* ---------- Configurações guardadas no aparelho (localStorage) ---------- */
+const DEFAULTS = { ...state };                       // cópia dos valores de fábrica (usada em "Repor")
+let needReset = true;                                // true = ainda falta calcular a dock inicial
+let saveTimer;
+function saveSoon(){                                 // grava 300 ms depois da última mudança
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem('dockSettings', JSON.stringify({ state, W: cv.width, H: cv.height, mode: document.getElementById('outMode').value })); } catch (e) {}
+  }, 300);
+}
+try {                                                // restaura a sessão anterior, se existir
+  const s = JSON.parse(localStorage.getItem('dockSettings') || 'null');
+  if (s && s.state){
+    Object.assign(state, s.state);
+    cv.width = s.W; cv.height = s.H;                 // tamanho em que a dock foi ajustada (applySize reescala se mudar)
+    document.getElementById('outMode').value = s.mode || 'auto';
+    document.getElementById('outW').value = s.W; document.getElementById('outH').value = s.H;
+    document.getElementById('showRef').checked = state.showRef !== false;
+    needReset = false;                               // mantém a dock da sessão anterior
+  }
+} catch (e) {}
+document.getElementById('btnReset').addEventListener('click', () => {
+  try { localStorage.removeItem('dockSettings'); } catch (e) {}
+  Object.assign(state, DEFAULTS);                    // volta aos valores de fábrica
+  document.getElementById('outMode').value = 'auto';
+  applySize(); resetDock(); syncInputs(); draw();
+});
+
+/* Arranque */
+setWall(wall);
+</script>
+</body>
+</html>
