@@ -174,6 +174,78 @@ body{--bg:#07090d;--panel:rgba(30,33,42,.66);--line:rgba(255,255,255,.1);--text:
 .phone{border:0;border-radius:14px;background:transparent;box-shadow:0 12px 40px rgba(0,0,0,.45)}
 .phone::after{display:none}                /* sem o "notch" */
 .phone canvas{border-radius:14px}
+/* ---------- v7: correções do painel no celular ---------- */
+@media (max-width:820px){
+  .panel{align-self:stretch;width:100%;max-height:none;overflow:visible}   /* antes herdava align-self:start e encolhia até a largura do conteúdo */
+  .handle{flex:none;height:26px;padding:0;align-items:center}              /* altura fixa: o handle não encosta mais na barra */
+  .bar{position:relative;bottom:auto;flex:none}                            /* sem "sticky" dentro do painel */
+  .panel details[open]{max-height:42vh;padding-bottom:20px}               /* a última linha rola sem ficar escondida atrás da barra */
+}
+/* ---------- v8: layout e visual inspirados no DockWalls ----------
+   Prévia no topo, abas "Base | Dock" e cartões de configuração rolando embaixo, tema verde-sálvia com verde-petróleo.
+   (cores estimadas a olho a partir dos prints; para mudar o tema basta editar as variáveis abaixo) */
+body{--bg:#c9d0bb;--panel:#dde2d0;--card:#eef1e3;--line:rgba(40,70,64,.2);--text:#1e2d2a;--mute:#5a6c66;--acc:#4a6e67;--acc-fg:#f3f7ef;--stage:#1d2422;
+  color-scheme:light;background:var(--bg);color:var(--text)}
+.stage{background:#1d2422;border:0;box-shadow:none}
+.stage .info{color:#a9b8b1}
+.panel{background:var(--panel);-webkit-backdrop-filter:none;backdrop-filter:none;border:0;box-shadow:none}
+.tabs,.handle{display:none !important}   /* as abas antigas e o handle foram substituídos */
+/* barra de abas Base | Dock + botão de menu */
+.topbar{position:sticky;top:0;z-index:4;display:flex;gap:8px;align-items:center;padding:10px 12px;background:var(--panel)}
+.dtabs{flex:1;display:flex;gap:4px;padding:3px;border-radius:12px;background:rgba(40,70,64,.14)}
+.dtabs button{flex:1;border:0;background:none;color:var(--acc);font-weight:800;padding:10px 0;border-radius:10px}
+.dtabs button.on{background:var(--acc);color:var(--acc-fg)}
+.burger{flex:none;width:46px;height:46px;padding:0;border:0;border-radius:12px;background:var(--acc);color:var(--acc-fg);font-size:22px}
+/* cada seção é um cartão com título em negrito (todas abertas; as abas escolhem quais aparecem) */
+.panel details,.panel details[open]{display:block;max-height:none;overflow:visible;margin:0 12px 12px;padding:0 14px 14px;background:var(--card);border:1px solid var(--line);border-radius:14px}
+.panel summary{display:block;pointer-events:none;padding:14px 0 10px;font-size:15px;font-weight:800}
+.panel summary::after{content:none}
+.panel[data-tab="base"] details:nth-of-type(n+3),.panel[data-tab="dock"] details:nth-of-type(-n+2){display:none}
+.panel.hide details{display:none}
+/* controles no tema claro */
+button,.step input,select{background-color:rgba(255,255,255,.65);border:1px solid var(--line);color:var(--text)}
+.solid{background:var(--acc);color:var(--acc-fg);border:0;font-weight:800;padding:12px;border-radius:12px}
+.file{background:#f7f9f0;border:1px solid var(--line)}
+.thumb{background-color:rgba(40,70,64,.12)}
+.bar{position:sticky;bottom:0;z-index:4;background:var(--panel);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px))}
+.bar .split-main,.bar .split-arrow{background:var(--acc);color:var(--acc-fg)}
+#btnPeek{background:rgba(255,255,255,.65)}
+.split-menu{background:#f4f6ec;color:var(--text);border:1px solid var(--line);box-shadow:0 12px 32px rgba(30,45,42,.25);-webkit-backdrop-filter:none;backdrop-filter:none}
+.split-menu button{background:none;border:0;color:var(--text)}
+.split-menu button:hover{background:rgba(40,70,64,.1)}
+.lv output{color:var(--acc)}
+/* interruptor On/Off */
+input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;width:48px;height:28px;border-radius:14px;background:rgba(40,70,64,.25);position:relative;border:0;cursor:pointer;transition:background .2s}
+input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .2s}
+input[type=checkbox]:checked{background:var(--acc)}
+input[type=checkbox]:checked::after{transform:translateX(20px)}
+@media (max-width:820px){
+  .app{background:#1d2422;gap:0}
+  /* prévia fixa no topo; o painel ocupa o resto e rola por dentro */
+  .stage{flex:none;height:44vh;margin:0;padding:6px 8px;border-radius:0}
+  .stage.big{height:72vh}                  /* botão "Ampliar prévia" */
+  .stage .info:last-child{display:none}
+  .stage .bigbtn{display:block !important;position:absolute;top:10px;right:10px;z-index:2;border:0;border-radius:999px;padding:6px 12px;font-size:12px;background:rgba(0,0,0,.55);color:#fff}
+  .panel{flex:1 1 0;min-height:0;overflow-y:auto;max-height:none;border-radius:18px 18px 0 0;padding-bottom:0;margin:0}
+}
+/* ---------- v9: cores dinâmicas (Material 3) + prévia maior ----------
+   As variáveis de cor são reescritas por applyTheme() (JS) a partir da paleta do sistema ou do wallpaper. */
+body{--sc:#c3cdb4}
+.stage{background:var(--stage)}
+.stage .info{color:rgba(255,255,255,.7)}
+.dtabs{background:var(--sc)}
+button,.step input,select{background-color:var(--card)}
+#btnPeek{background:var(--card)}
+.file{background:var(--panel)}
+.thumb{background-color:var(--sc)}
+.split-menu{background:var(--card)}
+input[type=checkbox]{background:var(--line)}
+@media (max-width:820px){
+  .app{background:var(--stage)}
+  .stage{height:58vh;padding:4px 8px 2px}      /* prévia maior (antes: 44vh) */
+  .stage.big{height:80vh}                       /* botão "Ampliar prévia" (antes: 72vh) */
+  .stage .info{font-size:10.5px;line-height:1.25}
+}
 </style>
 </head>
 <body>
@@ -199,13 +271,15 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
 
   <!-- PAINEL DE CONTROLOS -->
   <aside class="panel" id="panel">
-    <h1>Dock Líquida</h1>
+    <div class="topbar">
+      <nav class="dtabs" id="dtabs"><button type="button" data-t="base" class="on">Base</button><button type="button" data-t="dock">Dock</button></nav>
+      <button type="button" id="btnMenu" class="burger" aria-label="Menu">&#9776;</button>
+    </div>
 
     <details open><summary>Imagens</summary>
     <label class="file"><span class="thumb" id="tWall"></span><span class="ftxt"><b>Papel de parede final</b><small id="nWall">Toque para escolher uma imagem</small></span><input type="file" accept="image/*" id="fWall"></label>
     <label class="file"><span class="thumb" id="tRef"></span><span class="ftxt"><b>Print da tela inicial (gabarito)</b><small id="nRef">Toque para escolher o print</small></span><input type="file" accept="image/*" id="fRef"></label>
     <div class="row"><label for="showRef">Mostrar print por cima</label><input type="checkbox" id="showRef" checked></div>
-    <button id="btnLive" type="button" style="display:none;width:100%;margin-top:8px">Alinhar sobre a tela inicial</button>
     <div class="row" id="rowAlvo" style="display:none;margin-top:8px"><label for="selAlvo">Aplicar em</label>
       <select id="selAlvo" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
         <option value="home">Tela inicial</option><option value="lock">Tela de bloqueio</option><option value="both">Ambas</option>
@@ -223,6 +297,7 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
 
     </details>
     <details open><summary>Posição da dock (precisão de 1 px)</summary>
+    <button id="btnLive" type="button" class="solid" style="display:none;width:100%;margin-bottom:12px">Alinhar sobre a tela inicial</button>
     <div id="steppers"></div>
 
     </details>
@@ -491,14 +566,16 @@ function drawDock(){
   const left = Math.round(cv.width/2 + state.x - w/2);  // x = 0 significa "centrada"
   const top = state.y;
 
-  // --- Sombra suave sob a dock (encolhida 1px para não sujar a borda) ---
+  // --- Sombra suave da dock: só é pintada FORA do vidro, então não suja a borda ---
   ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, cv.width, cv.height); ctx.roundRect(left, top, w, h, r);   // tela inteira com um "buraco" no formato da dock
+  ctx.clip('evenodd');                                                                         // a partir daqui só se pinta fora do buraco
   ctx.shadowColor = 'rgba(0,0,0,.35)';
   ctx.shadowBlur = h*0.25;
   ctx.shadowOffsetY = h*0.08;
   ctx.fillStyle = '#000';
-  roundRectPath(left+1, top+1, w-2, h-2, Math.max(r-1,0));
-  ctx.fill();
+  roundRectPath(left, top, w, h, r);
+  ctx.fill();                                                                                  // o preenchimento cai no buraco; só a sombra aparece
   ctx.restore();
 
   // --- Região de trabalho = dock + margem (para o desfoque e a refração) ---
@@ -969,6 +1046,103 @@ document.getElementById('fProj').addEventListener('change', async e => {
     applySize(); syncInputs(); schedule();
   } catch (err) { alert('Arquivo de projeto inválido.'); }
 });
+
+/* ---------- v8: abas Base | Dock, menu ☰ e cartões (inspirado no DockWalls) ---------- */
+const dtabs = document.getElementById('dtabs');
+function setTab(t){                                            // Base = Imagens + Papel de parede; Dock = Posição + Vidro
+  panel.dataset.tab = t;                                       // o CSS mostra só os cartões da aba ativa
+  [...dtabs.children].forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  panel.scrollTop = 0;
+}
+dtabs.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.t); });
+secs.forEach(d => d.open = true);                              // todas as seções ficam abertas
+setTab('base');
+
+/* ☰ abre o mesmo menu do botão dividido (Aplicar, alta resolução, projetos), logo abaixo do botão */
+const btnMenu = document.getElementById('btnMenu');
+btnMenu.addEventListener('click', e => {
+  e.stopPropagation();                                         // senão o clique "fora do menu" o fecharia na hora
+  if (menu.hidden || menu.dataset.from !== 'top'){
+    const r = btnMenu.getBoundingClientRect();
+    Object.assign(menu.style, { position: 'fixed', top: (r.bottom + 6) + 'px', right: '12px', bottom: 'auto' });
+    menu.dataset.from = 'top'; menu.hidden = false;
+  } else fecharMenu();
+});
+arrow.addEventListener('click', () => {                        // a seta do rodapé volta a abrir o menu em cima do botão dividido
+  if (menu.dataset.from === 'top'){ menu.removeAttribute('style'); delete menu.dataset.from; }
+});
+
+/* ---------- v9: cores dinâmicas (Material 3 / Material You) ----------
+   No APK (Android 12+) usa a paleta real do sistema. No navegador, gera a paleta a partir do wallpaper carregado.
+   Segue o tema claro/escuro do sistema. */
+const SHADES = [[0,100],[10,99],[50,95],[100,90],[200,80],[300,70],[400,60],[500,50],[600,40],[700,30],[800,20],[900,10],[1000,0]];   // [número do Android, tom Material]
+let SYS = null;                                    // paleta do sistema (a1, a2, n1, n2), se existir
+let SEED = { h: 195, c: 0.08 };                    // matiz e croma de partida (verde-petróleo)
+
+/* Conversões de cor em OKLCH (espaço perceptual, parecido com o HCT do Material) */
+const toneL = t => Math.cbrt(t > 8 ? Math.pow((t + 16) / 116, 3) : t / 903.3);     // tom Material (0 a 100) -> luminosidade OKLab
+const lin = v => { v /= 255; return v <= .04045 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+function toOklch(r, g, b){
+  r = lin(r); g = lin(g); b = lin(b);
+  const l = Math.cbrt(.4122214708*r + .5363325363*g + .0514459929*b), m = Math.cbrt(.2119034982*r + .6806995451*g + .1073969566*b), s = Math.cbrt(.0883024619*r + .2817188376*g + .6299787005*b);
+  const L = .2104542553*l + .793617785*m - .0040720468*s, a = 1.9779984951*l - 2.428592205*m + .4505937099*s, bb = .0259040371*l + .7827717662*m - .808675766*s;
+  return [L, Math.hypot(a, bb), (Math.atan2(bb, a) * 180 / Math.PI + 360) % 360];
+}
+function oklchHex(L, C, H){
+  const r = H * Math.PI / 180;
+  for (let c = C; c >= 0; c -= 0.005){             // reduz o croma até a cor caber no sRGB
+    const a = c * Math.cos(r), b = c * Math.sin(r);
+    const l = (L + .3963377774*a + .2158037573*b) ** 3, m = (L - .1055613458*a - .0638541728*b) ** 3, s = (L - .0894841775*a - 1.291485548*b) ** 3;
+    const rgb = [4.0767416621*l - 3.3077115913*m + .2309699292*s, -1.2684380046*l + 2.6097574011*m - .3413193965*s, -.0041960863*l - .7034186147*m + 1.707614701*s];
+    if (rgb.every(v => v >= -.001 && v <= 1.001) || c < .005)
+      return '#' + rgb.map(v => { v = Math.min(1, Math.max(0, v)); v = v <= .0031308 ? 12.92*v : 1.055*Math.pow(v, 1/2.4) - .055; return Math.round(v * 255).toString(16).padStart(2, '0'); }).join('');
+  }
+}
+
+/* Cor de uma paleta (a1 = primária, a2 = secundária, n1/n2 = neutras) em um tom Material */
+function tone(p, t){
+  if (SYS && SYS[p]){                              // paleta do sistema: pega o tom mais próximo disponível
+    let best = SHADES[0];
+    for (const s of SHADES) if (Math.abs(s[1] - t) < Math.abs(best[1] - t)) best = s;
+    return SYS[p][best[0]];
+  }
+  const C = { a1: Math.min(.16, Math.max(.08, SEED.c)), a2: .04, n1: .008, n2: .016 }[p];
+  return oklchHex(toneL(t), C, SEED.h);
+}
+
+/* Papéis de cor do Material 3 ligados às variáveis do app */
+function applyTheme(){
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches, T = tone;
+  const v = dark
+    ? { '--bg': T('n1',6),  '--panel': T('n1',12), '--card': T('n1',17), '--line': T('n2',30), '--text': T('n1',90), '--mute': T('n2',80), '--acc': T('a1',80), '--acc-fg': T('a1',20),  '--sc': T('a2',30), '--stage': T('n1',4) }
+    : { '--bg': T('n1',96), '--panel': T('n1',94), '--card': T('n1',98), '--line': T('n2',80), '--text': T('n1',10), '--mute': T('n2',30), '--acc': T('a1',40), '--acc-fg': T('a1',100), '--sc': T('a2',90), '--stage': T('n1',10) };
+  for (const k in v) document.body.style.setProperty(k, v[k]);
+  document.body.style.colorScheme = dark ? 'dark' : 'light';
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+/* Cor-semente: o matiz mais presente e colorido do wallpaper (ignora quase-preto, quase-branco e cinzas) */
+function seedFrom(img){
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 48, 48);
+  const d = g.getImageData(0, 0, 48, 48).data, bins = Array.from({ length: 36 }, () => ({ w: 0, c: 0, x: 0, y: 0 }));
+  for (let i = 0; i < d.length; i += 4){
+    const [L, C, H] = toOklch(d[i], d[i+1], d[i+2]);
+    if (L < .2 || L > .95) continue;
+    const w = C * C, b = bins[Math.floor(H / 10) % 36], r = H * Math.PI / 180;   // quanto mais colorido, maior o peso
+    b.w += w; b.c += C * w; b.x += Math.cos(r) * w; b.y += Math.sin(r) * w;
+  }
+  const top = bins.reduce((a, b) => (b.w > a.w ? b : a));
+  SEED = top.w < .02 ? { h: SEED.h, c: .03 }                                      // imagem quase cinza: tema discreto
+                     : { h: (Math.atan2(top.y, top.x) * 180 / Math.PI + 360) % 360, c: top.c / top.w };
+}
+const _setWall = setWall;                          // novo wallpaper escolhido -> novo tema (o degradê padrão não conta)
+setWall = function (img){
+  _setWall(img);
+  if (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap){ try { seedFrom(img); applyTheme(); } catch (e) {} }
+};
+if (DO && DO.getSystemColors) DO.getSystemColors().then(c => { if (c && c.a1 && c.n1){ SYS = c; applyTheme(); } }).catch(() => {});   // APK: paleta real do sistema
+applyTheme();
 
 /* Arranque */
 setWall(wall);
