@@ -96,6 +96,29 @@ public class DockOverlayPlugin extends Plugin {
         });
     }
 
+    /** Paleta dinâmica do sistema (Material You, Android 12+): devolve a1, a2, n1, n2 com os tons em hexadecimal. */
+    @PluginMethod
+    public void getSystemColors(PluginCall call) {
+        JSObject out = new JSObject();
+        if (Build.VERSION.SDK_INT >= 31) {
+            String[] nomes = {"accent1", "accent2", "neutral1", "neutral2"};
+            String[] chaves = {"a1", "a2", "n1", "n2"};
+            int[] tons = {0, 10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
+            for (int p = 0; p < nomes.length; p++) {
+                JSObject o = new JSObject();
+                for (int t : tons) {
+                    try {
+                        int id = android.R.color.class.getField("system_" + nomes[p] + "_" + t).getInt(null);
+                        int c = getContext().getResources().getColor(id, null);
+                        o.put(String.valueOf(t), String.format("#%06X", 0xFFFFFF & c));
+                    } catch (Exception ignored) { }
+                }
+                try { out.put(chaves[p], o); } catch (Exception ignored) { }
+            }
+        }
+        call.resolve(out);
+    }
+
     /** Aplica o PNG (base64) como papel de parede: target = "home", "lock" ou "both". */
     @PluginMethod
     public void setWallpaper(final PluginCall call) {
