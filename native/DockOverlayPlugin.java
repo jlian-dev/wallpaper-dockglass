@@ -21,6 +21,10 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -56,7 +60,7 @@ public class DockOverlayPlugin extends Plugin {
     @PluginMethod
     public void hasPermission(PluginCall call) {
         JSObject r = new JSObject();
-        r.put("granted", Settings.canDrawOverlays(getContext()));
+        r.put("granted", Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(getContext()));   // antes do Android 6 não existe essa permissão
         call.resolve(r);
     }
 
@@ -93,6 +97,30 @@ public class DockOverlayPlugin extends Plugin {
             } catch (Exception ex) {
                 call.reject(String.valueOf(ex.getMessage()));
             }
+        });
+    }
+
+    /** Quanto do WebView fica por baixo das barras do sistema (em px CSS): o CSS usa isso como área segura. */
+    @PluginMethod
+    public void getInsets(final PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            JSObject r = new JSObject();
+            try {
+                View root = getActivity().getWindow().getDecorView();
+                View wv = getBridge().getWebView();
+                WindowInsetsCompat wi = ViewCompat.getRootWindowInsets(root);
+                float d = getContext().getResources().getDisplayMetrics().density;
+                if (wi != null) {
+                    Insets sb = wi.getInsets(WindowInsetsCompat.Type.systemBars());
+                    int[] loc = new int[2];
+                    wv.getLocationInWindow(loc);
+                    int sobreTopo = Math.max(0, sb.top - loc[1]);                                        // parte do WebView sob a barra de status
+                    int sobreBase = Math.max(0, (loc[1] + wv.getHeight()) - (root.getHeight() - sb.bottom)); // parte sob a barra de navegação
+                    r.put("top", sobreTopo / d);
+                    r.put("bottom", sobreBase / d);
+                }
+            } catch (Exception ignored) { }
+            call.resolve(r);
         });
     }
 
