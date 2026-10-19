@@ -165,6 +165,9 @@ button,.step input{background-color:rgba(255,255,255,.06);border-color:var(--lin
 /* No tema escuro do sistema, a regra do @media tem mais prioridade que :root e deixava o painel opaco e as bordas cinza.
    Definir o vidro direto no body garante o visual dark glass em qualquer aparelho. */
 body{--bg:#07090d;--panel:rgba(30,33,42,.66);--line:rgba(255,255,255,.1);--text:#f2f4f8;--mute:#9aa3b2;--acc:#8cc8ff;--stage:transparent}
+
+@media (max-width:820px){ .bar{padding-bottom:calc(10px + max(env(safe-area-inset-bottom,0px),var(--sab,0px),20px))} }
+
 @media (max-width:820px){
   /* "Papel de parede" quebra em duas linhas em vez de ser cortado com "…" */
   .tabs button{white-space:normal;line-height:1.1;font-size:12px;padding:6px 2px;overflow:visible;text-overflow:clip}
