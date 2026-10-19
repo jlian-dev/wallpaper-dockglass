@@ -160,7 +160,6 @@ button,.step input{background-color:rgba(255,255,255,.06);border-color:var(--lin
   .tabs button.on{background:none;color:var(--text);font-weight:700}
   .seg-ind{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/4);border-radius:10px;background:rgba(255,255,255,.18);box-shadow:0 1px 4px rgba(0,0,0,.35),inset 0 0 0 .5px rgba(255,255,255,.15);transform:translateX(calc(var(--i,0)*100%));transition:transform .28s cubic-bezier(.3,.8,.3,1)}
   .panel.min .tabs{display:none}
-  #btnPeek{flex:none;padding:12px 14px}
 }
 /* ---------- v6.1: correções ---------- */
 /* No tema escuro do sistema, a regra do @media tem mais prioridade que :root e deixava o painel opaco e as bordas cinza.
@@ -195,7 +194,6 @@ body{--bg:#c9d0bb;--panel:#dde2d0;--card:#eef1e3;--line:rgba(40,70,64,.2);--text
 .dtabs{flex:1;display:flex;gap:4px;padding:3px;border-radius:12px;background:rgba(40,70,64,.14)}
 .dtabs button{flex:1;border:0;background:none;color:var(--acc);font-weight:800;padding:10px 0;border-radius:10px}
 .dtabs button.on{background:var(--acc);color:var(--acc-fg)}
-.burger{flex:none;width:46px;height:46px;padding:0;border:0;border-radius:12px;background:var(--acc);color:var(--acc-fg);font-size:22px}
 /* cada seção é um cartão com título em negrito (todas abertas; as abas escolhem quais aparecem) */
 .panel details,.panel details[open]{display:block;max-height:none;overflow:visible;margin:0 12px 12px;padding:0 14px 14px;background:var(--card);border:1px solid var(--line);border-radius:14px}
 .panel summary{display:block;pointer-events:none;padding:14px 0 10px;font-size:15px;font-weight:800}
@@ -209,7 +207,6 @@ button,.step input,select{background-color:rgba(255,255,255,.65);border:1px soli
 .thumb{background-color:rgba(40,70,64,.12)}
 .bar{position:sticky;bottom:0;z-index:4;background:var(--panel);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px))}
 .bar .split-main,.bar .split-arrow{background:var(--acc);color:var(--acc-fg)}
-#btnPeek{background:rgba(255,255,255,.65)}
 .split-menu{background:#f4f6ec;color:var(--text);border:1px solid var(--line);box-shadow:0 12px 32px rgba(30,45,42,.25);-webkit-backdrop-filter:none;backdrop-filter:none}
 .split-menu button{background:none;border:0;color:var(--text)}
 .split-menu button:hover{background:rgba(40,70,64,.1)}
@@ -235,7 +232,6 @@ body{--sc:#c3cdb4}
 .stage .info{color:rgba(255,255,255,.7)}
 .dtabs{background:var(--sc)}
 button,.step input,select{background-color:var(--card)}
-#btnPeek{background:var(--card)}
 .file{background:var(--panel)}
 .thumb{background-color:var(--sc)}
 .split-menu{background:var(--card)}
@@ -246,6 +242,82 @@ input[type=checkbox]{background:var(--line)}
   .stage.big{height:80vh}                       /* botão "Ampliar prévia" (antes: 72vh) */
   .stage .info{font-size:10.5px;line-height:1.25}
 }
+/* ---------- v10: correções visuais (print do APK) ----------
+   1) o "−" solto depois do título "Imagens" (regra antiga do acordeão ganhava na prioridade)
+   2) o chip "Ampliar prévia" ficava por cima da imagem e cortado: agora é um botão quadrado só com ícone
+   3) a barra de baixo ficava parcialmente atrás da barra de navegação do sistema */
+.panel details[open] summary::after,.panel summary::after{content:none !important}
+@media (max-width:820px){
+  .stage .bigbtn{display:grid !important;place-items:center;width:40px;height:40px;padding:0;top:8px;right:8px;font-size:0;border-radius:12px;background:var(--sc);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  .stage .bigbtn::before{content:"\2922";font-size:20px;line-height:1}       /* ⤢ ampliar */
+  .stage.big .bigbtn::before{content:"\2921"}                                 /* ⤡ reduzir */
+  /* --sat / --sab vêm do plugin nativo: quanto do WebView está por baixo das barras do sistema (0 se não estiver) */
+  .app{padding-top:max(env(safe-area-inset-top,0px),var(--sat,0px))}
+  .bar{padding-bottom:calc(10px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)))}
+}
+/* ---------- v11: telas (início, galeria, configurações), usando as cores dinâmicas do tema ---------- */
+.stage{position:relative}
+.stage .ebtn{position:absolute;top:8px;left:8px;z-index:2;width:40px;height:40px;padding:0;border:0;border-radius:12px;background:var(--sc);color:var(--text);font-size:20px;display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.view{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;background:var(--bg);color:var(--text);
+  padding:max(env(safe-area-inset-top,0px),var(--sat,0px)) 0 max(env(safe-area-inset-bottom,0px),var(--sab,0px));
+  opacity:0;visibility:hidden;transform:translateY(10px);pointer-events:none;transition:opacity .18s,transform .18s,visibility 0s .18s}
+.view.on{opacity:1;visibility:visible;transform:none;pointer-events:auto;transition:opacity .18s,transform .18s}
+.vh{flex:none;display:flex;align-items:center;gap:12px;padding:12px 16px;width:100%;max-width:720px;margin:0 auto}
+.vh .brand,.vh .vt{flex:1;display:flex;align-items:center;gap:10px;font-size:20px;font-weight:800}
+.vbody{flex:1;min-height:0;overflow-y:auto;padding:4px 16px 24px;width:100%;max-width:720px;margin:0 auto}
+.ib{flex:none;width:44px;height:44px;padding:0;border:0;border-radius:14px;background:var(--sc);color:var(--text);font-size:20px;display:grid;place-items:center}
+.tonal{background:var(--sc);color:var(--text);border:0;font-weight:800;border-radius:12px;padding:12px}
+.solid.big,.tonal.big{width:100%;padding:16px;font-size:16px;border-radius:16px}
+.sm{padding:9px 14px;font-size:14px}
+.hero{display:flex;align-items:center;justify-content:center;height:min(46vh,440px);margin:0 0 14px;padding:12px;border-radius:24px;background:var(--card);border:1px solid var(--line)}
+.hero img{height:100%;width:auto;max-width:100%;object-fit:contain;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.hero-empty,.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--mute)}
+.hero-empty{width:100%;height:100%;border:2px dashed var(--line);border-radius:16px;padding:16px}
+.hero-empty b,.empty b{color:var(--text);font-size:17px}
+.empty{padding:48px 16px}
+.acts{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.sec-h{display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px}
+.sec-h h3{margin:0;font-size:16px}
+.link{border:0;background:none;color:var(--acc);font-weight:800;padding:6px}
+.strip{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+.strip .none{color:var(--mute);padding:8px 0}
+.rc{flex:none;width:76px;aspect-ratio:9/16;padding:0;border:3px solid transparent;border-radius:14px;overflow:hidden;background:var(--card)}
+.rc img,.gi img{width:100%;height:100%;object-fit:cover;display:block}
+.rc.sel,.gi.sel{border-color:var(--acc)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px}
+.gi{position:relative;aspect-ratio:9/16;border-radius:14px;overflow:hidden;border:3px solid transparent;background:var(--card);cursor:pointer}
+.gi .chk{display:none;position:absolute;left:6px;bottom:6px;width:24px;height:24px;border-radius:50%;background:var(--acc);color:var(--acc-fg);font-style:normal;font-size:14px;font-weight:800;place-items:center}
+.gi.sel .chk{display:grid}
+.gi .x{position:absolute;top:6px;right:6px;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:18px;line-height:1}
+.view h4{margin:18px 4px 8px;font-size:13px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:0 14px;margin-bottom:12px}
+.card.list button,.rowbtn{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:none;color:var(--text);padding:15px 0;font-size:15px;font-weight:700;border-radius:0}
+.card.list button:last-child,.rowbtn:last-child{border-bottom:0}
+.srow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.srow[hidden]{display:none}
+.srow small,.about small{display:block;color:var(--mute);font-size:12.5px;margin-top:2px}
+.about{padding:14px}
+.seg{display:flex;gap:2px;padding:3px;border-radius:12px;background:var(--sc)}
+.seg button{border:0;background:none;color:var(--text);padding:8px 10px;border-radius:9px;font-size:13px;font-weight:700}
+.seg button.on{background:var(--acc);color:var(--acc-fg)}
+.toast{position:fixed;left:50%;bottom:calc(24px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)));transform:translate(-50%,20px);max-width:90vw;padding:10px 16px;border-radius:12px;background:var(--text);color:var(--bg);font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:80;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){.view,.toast{transition:none}}
+/* v11.1: acabamento (visto nos testes) */
+.gi .x{min-width:0}                                   /* o botão × era mais largo que alto (min-width global) e virava oval */
+.srow{flex-wrap:wrap;border-bottom:0;border-top:1px solid var(--line)}   /* linha só ENTRE itens: não sobra traço no fim do cartão */
+.srow:first-child{border-top:0}
+.srow>div:first-child{flex:1 1 150px;min-width:0}     /* se o controle não couber ao lado, desce para a linha de baixo em vez de espremer o texto */
+.srow .seg{margin-left:auto}
+.rowbtn{border-top:1px solid var(--line);border-bottom:0}
+
+/* ---------- v12: caixa "Aplicar em" ---------- */
+.dlg{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.45)}
+.dlg[hidden]{display:none}
+.dlg-box{width:min(340px,100%);display:flex;flex-direction:column;gap:8px;padding:16px;border-radius:20px;background:var(--card);color:var(--text);box-shadow:0 16px 48px rgba(0,0,0,.4)}
+.dlg-box b{font-size:17px;margin:2px 2px 6px}
+.dlg-box button{padding:14px;border:0;border-radius:12px;background:var(--sc);color:var(--text);font-weight:800}
+.dlg-box .ghost{background:none;color:var(--mute)}
 </style>
 </head>
 <body>
@@ -264,6 +336,7 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
   <!-- PALCO: aqui aparece o resultado -->
   <section class="stage">
     <button id="btnBig" class="bigbtn" type="button">Ampliar prévia</button>
+    <button id="eBack" class="ebtn" type="button" aria-label="Voltar ao início">&larr;</button>
     <div class="pwrap" id="pwrap"><div class="phone" id="phone"><canvas id="cv"></canvas></div></div>
     <div class="info" id="info"></div>
     <div class="info">Arraste a dock na imagem para movê-la; use −1 / +1 para o ajuste fino.</div>
@@ -273,27 +346,22 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
   <aside class="panel" id="panel">
     <div class="topbar">
       <nav class="dtabs" id="dtabs"><button type="button" data-t="base" class="on">Base</button><button type="button" data-t="dock">Dock</button></nav>
-      <button type="button" id="btnMenu" class="burger" aria-label="Menu">&#9776;</button>
     </div>
 
     <details open><summary>Imagens</summary>
     <label class="file"><span class="thumb" id="tWall"></span><span class="ftxt"><b>Papel de parede final</b><small id="nWall">Toque para escolher uma imagem</small></span><input type="file" accept="image/*" id="fWall"></label>
-    <label class="file"><span class="thumb" id="tRef"></span><span class="ftxt"><b>Print da tela inicial (gabarito)</b><small id="nRef">Toque para escolher o print</small></span><input type="file" accept="image/*" id="fRef"></label>
-    <div class="row"><label for="showRef">Mostrar print por cima</label><input type="checkbox" id="showRef" checked></div>
-    <div class="row" id="rowAlvo" style="display:none;margin-top:8px"><label for="selAlvo">Aplicar em</label>
-      <select id="selAlvo" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
-        <option value="home">Tela inicial</option><option value="lock">Tela de bloqueio</option><option value="both">Ambas</option>
-      </select></div>
 
     </details>
     <details><summary>Papel de parede: tamanho, corte e desfoque</summary>
     <select id="outMode" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
-      <option value="auto">Igual ao print (ou à imagem, sem print)</option>
+      <option value="auto">Igual à imagem</option>
+      <option value="device">Tela deste aparelho</option>
       <option value="custom">Personalizado</option>
     </select>
     <div class="row"><label for="outW">Largura × Altura</label>
       <div class="step"><input type="number" id="outW"><input type="number" id="outH"></div></div>
     <div id="fitSliders"></div>
+    <button id="btnFitReset" type="button" class="tonal" style="width:100%;margin-top:6px">Restaurar enquadramento</button>
 
     </details>
     <details open><summary>Posição da dock (precisão de 1 px)</summary>
@@ -314,12 +382,13 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
     <button id="btnReset" style="width:100%;margin-top:6px">Repor valores padrão</button>
     </details>
     <div class="bar">
-      <button id="btnPeek" title="Segure para ver o resultado sem o print">Segure: sem print</button>
       <div class="split" id="split">
         <button type="button" id="splitMain" class="split-main">Baixar PNG</button>
         <button type="button" id="splitArrow" class="split-arrow" aria-label="Mais ações" aria-expanded="false"></button>
         <div class="split-menu" id="splitMenu" hidden>
-          <button type="button" data-act="apply" id="actApply" hidden>Aplicar na Tela Inicial</button>
+          <button type="button" data-act="nav-home">Início</button>
+          <button type="button" data-act="nav-settings">Configurações</button>
+          <button type="button" data-act="apply" id="actApply" hidden>Aplicar como wallpaper…</button>
           <button type="button" data-act="hires">Baixar em Alta Resolução</button>
           <button type="button" data-act="project">Salvar Projeto</button>
           <button type="button" data-act="open">Abrir Projeto</button>
@@ -331,6 +400,83 @@ window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
     </div>
   </aside>
 </main>
+
+<!-- ===== Telas: Início, Galeria e Configurações (o editor da Dock continua sendo o <main class="app"> acima) ===== -->
+<section class="view" id="v-home" aria-label="Início">
+  <header class="vh">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="var(--acc)"/><rect x="4.5" y="14.5" width="15" height="5" rx="2.5" fill="var(--acc-fg)" opacity=".95"/><circle cx="9" cy="17" r="1.1" fill="var(--acc)"/><circle cx="12" cy="17" r="1.1" fill="var(--acc)"/><circle cx="15" cy="17" r="1.1" fill="var(--acc)"/></svg>
+      <b>Dock Líquida</b>
+    </div>
+    <button class="ib" type="button" data-go="settings" aria-label="Abrir configurações">&#9776;</button>
+  </header>
+  <div class="vbody">
+    <div class="hero">
+      <img id="heroImg" alt="Prévia do wallpaper atual com a Dock" hidden>
+      <div class="hero-empty" id="heroEmpty"><b>Nenhum wallpaper ainda</b><span>Escolha uma imagem para ver a prévia com a sua Dock.</span></div>
+    </div>
+    <div class="acts">
+      <button class="solid big" id="hPick" type="button">Escolher wallpaper</button>
+      <button class="tonal big" id="hDock" type="button">Personalizar Dock</button>
+    </div>
+    <div class="sec-h"><h3>Recentes</h3><button class="link" type="button" data-go="gallery">Ver galeria</button></div>
+    <div class="strip" id="hRecent"></div>
+  </div>
+</section>
+
+<section class="view" id="v-gallery" aria-label="Galeria">
+  <header class="vh">
+    <button class="ib" type="button" data-back aria-label="Voltar">&larr;</button>
+    <b class="vt">Galeria</b>
+    <button class="solid sm" id="gAdd" type="button">+ Adicionar</button>
+  </header>
+  <div class="vbody">
+    <div class="grid" id="gGrid"></div>
+    <div class="empty" id="gEmpty" hidden><b>Sua galeria está vazia</b><span>Adicione imagens do aparelho. Elas ficam guardadas aqui para você reutilizar quando quiser.</span><button class="solid" id="gAdd2" type="button">Adicionar imagem</button></div>
+  </div>
+</section>
+
+<section class="view" id="v-settings" aria-label="Configurações">
+  <header class="vh">
+    <button class="ib" type="button" data-back aria-label="Voltar">&larr;</button>
+    <b class="vt">Configurações</b>
+  </header>
+  <div class="vbody">
+    <h4>Principal</h4>
+    <div class="card list">
+      <button type="button" data-go="home">Início</button>
+      <button type="button" data-go="gallery">Galeria</button>
+      <button type="button" data-go="editor">Personalizar Dock</button>
+    </div>
+    <h4>Configurações</h4>
+    <div class="card">
+      <div class="srow"><div><b>Aparência</b><small>Tema da interface</small></div>
+        <div class="seg" id="sTema"><button type="button" data-v="auto">Auto</button><button type="button" data-v="claro">Claro</button><button type="button" data-v="escuro">Escuro</button></div></div>
+      <div class="srow" id="rowCores" hidden><div><b>Origem das cores</b><small>Material You ou wallpaper</small></div>
+        <div class="seg" id="sCores"><button type="button" data-v="sistema">Sistema</button><button type="button" data-v="wallpaper">Wallpaper</button></div></div>
+    </div>
+    <div class="card">
+      <div class="srow"><div><b>Preferências</b><small>Abrir direto no editor</small></div><input type="checkbox" id="sEditor" aria-label="Abrir direto no editor"></div>
+      <div class="srow"><div><b>Qualidade da prévia</b><small>Rápida economiza bateria</small></div>
+        <div class="seg" id="sQual"><button type="button" data-v="0.6">Rápida</button><button type="button" data-v="1">Normal</button><button type="button" data-v="1.6">Nítida</button></div></div>
+    </div>
+    <div class="card">
+      <div class="srow"><div><b>Histórico de wallpapers</b><small id="sHistN">0 imagens</small></div><button class="tonal sm" id="sHistClear" type="button">Limpar</button></div>
+      <button class="rowbtn" id="sRestore" type="button">Restaurar configurações padrão</button>
+    </div>
+    <h4>Sobre</h4>
+    <div class="card about"><b>Dock Líquida</b><small>Versão <span id="sVer"></span></small><small>Efeito de refração baseado no artigo “Liquid Glass in the Browser”, de kube.io.</small></div>
+  </div>
+</section>
+<div class="dlg" id="alvoDlg" hidden role="dialog" aria-modal="true" aria-label="Aplicar wallpaper em">
+  <div class="dlg-box"><b>Aplicar wallpaper em</b>
+    <button type="button" data-alvo="home">Tela inicial</button>
+    <button type="button" data-alvo="lock">Tela de bloqueio</button>
+    <button type="button" data-alvo="both">Ambas</button>
+    <button type="button" data-alvo="" class="ghost">Cancelar</button></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="gFile" accept="image/*" multiple hidden>
+
 
 <script>
 /* =====================================================================
@@ -369,7 +515,6 @@ const SLIDERS = [['refOpacity','Opacidade do print',0,100],['blur','Desfoque do 
 const cv = document.getElementById('cv');       // elemento <canvas>
 const ctx = cv.getContext('2d');                // "caneta" para desenhar nele
 let wall = makeDefaultWall();                   // imagem de fundo (começa com um degradê)
-let ref = null;                                 // print de referência (começa vazio)
 
 /* =====================================================================
    2. PAPEL DE PAREDE PADRÃO: um degradê para a ferramenta funcionar
@@ -391,14 +536,16 @@ function makeDefaultWall(){
    Ao mudar de tamanho, a dock é reescalada na mesma proporção para não "fugir". */
 function applySize(){
   const oW = document.getElementById('outW'), oH = document.getElementById('outH');
-  const custom = document.getElementById('outMode').value === 'custom';
-  oW.disabled = oH.disabled = !custom;                       // no modo automático os campos só mostram o tamanho
+  const modo = document.getElementById('outMode').value;
+  if (modo === 'device'){ oW.value = Math.round(screen.width * devicePixelRatio); oH.value = Math.round(screen.height * devicePixelRatio); }   // resolução física deste aparelho
+  const custom = modo === 'custom' || modo === 'device';
+  oW.disabled = oH.disabled = modo !== 'custom';             // só o modo Personalizado deixa digitar
   let W, H;
   if (custom){
     W = Math.min(8192, Math.max(64, Math.round(+oW.value) || OUT.w));   // limites seguros do canvas
     H = Math.min(8192, Math.max(64, Math.round(+oH.value) || OUT.h));
   } else {
-    [W, H] = sizeOf(ref || wall);                            // print tem prioridade; senão a própria imagem
+    [W, H] = sizeOf(wall);                                  // tamanho da própria imagem
   }
   oW.value = W; oH.value = H;
   if ((W !== OUT.w || H !== OUT.h) && OUT.w > 0){
@@ -505,11 +652,6 @@ function render(showRef){
   const gkey = key + '|' + state.blur;               // o vidro só é recalculado se o fundo ou o desfoque mudarem
   if (gkey !== glassKey){ buildGlass(); glassKey = gkey; }               // 1) papel de parede
   drawDock();                                    // 2) dock de vidro
-  if (showRef && ref && !document.body.classList.contains('live')){                           // 3) print por cima, semitransparente
-    ctx.globalAlpha = state.refOpacity/100;
-    drawCover(ref, true);
-    ctx.globalAlpha = 1;
-  }
   // Aviso de qualidade: escala > 1 significa que a imagem original é menor que o quadro e foi ampliada
   const sc = Math.max(OUT.w/sizeOf(wall)[0], OUT.h/sizeOf(wall)[1]) * state.zoom/100;
   document.getElementById('info').textContent = OUT.w + ' × ' + OUT.h + ' px (prévia a ' + Math.round(W/OUT.w*100) + '%, o PNG sai em 100%) · ' +
@@ -566,16 +708,14 @@ function drawDock(){
   const left = Math.round(cv.width/2 + state.x - w/2);  // x = 0 significa "centrada"
   const top = state.y;
 
-  // --- Sombra suave da dock: só é pintada FORA do vidro, então não suja a borda ---
+  // --- Sombra suave da dock: a forma é desenhada FORA da tela e só a sombra (deslocada de volta) aparece,
+  //     então nenhum pixel preto toca a borda do vidro ---
   ctx.save();
-  ctx.beginPath(); ctx.rect(0, 0, cv.width, cv.height); ctx.roundRect(left, top, w, h, r);   // tela inteira com um "buraco" no formato da dock
-  ctx.clip('evenodd');                                                                         // a partir daqui só se pinta fora do buraco
-  ctx.shadowColor = 'rgba(0,0,0,.35)';
-  ctx.shadowBlur = h*0.25;
-  ctx.shadowOffsetY = h*0.08;
+  const OFF = cv.width + w + 400;
+  ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = h*0.25; ctx.shadowOffsetX = OFF; ctx.shadowOffsetY = h*0.08;
   ctx.fillStyle = '#000';
-  roundRectPath(left, top, w, h, r);
-  ctx.fill();                                                                                  // o preenchimento cai no buraco; só a sombra aparece
+  roundRectPath(left - OFF, top, w, h, r);
+  ctx.fill();
   ctx.restore();
 
   // --- Região de trabalho = dock + margem (para o desfoque e a refração) ---
@@ -617,7 +757,8 @@ function drawDock(){
       else if (qx > qy){ nx = Math.sign(dx); ny = 0; }                      // laterais
       else { nx = 0; ny = Math.sign(dy); }                                  // topo/base
 
-      const depth = -dist;                              // distância da borda para dentro
+      const depth = Math.max(0, -dist);   // nunca negativo: pixels até meio pixel fora da forma gravavam NaN (preto) na tabela de refração e formavam os pontos escuros nos cantos
+      //                              // distância da borda para dentro
       const idx = Math.min(127, Math.floor(depth/bevel*127)); // posição na tabela (0 = borda, 127 = fim do bisel)
       const disp = depth < bevel ? table[idx]*state.scale/100 : 0;                     // desvio em px (0 no miolo plano do vidro)
 
@@ -712,16 +853,10 @@ panel.addEventListener('input', e => {
   showVal(el);
   schedule();
 });
-// Caixa "Mostrar print"
-document.getElementById('showRef').addEventListener('change', e => { state.showRef = e.target.checked; schedule(); });
 
 /* Carregar imagens: createImageBitmap respeita a rotação das fotos de telemóvel */
 document.getElementById('fWall').addEventListener('change', async e => {
   if (e.target.files[0]) { setWall(await createImageBitmap(e.target.files[0])); document.getElementById('nWall').textContent = e.target.files[0].name; setThumb('tWall', e.target.files[0]); }
-});
-document.getElementById('fRef').addEventListener('change', async e => {
-  if (e.target.files[0]) { ref = await createImageBitmap(e.target.files[0]); applySize(); syncInputs(); draw();
-    document.getElementById('nRef').textContent = e.target.files[0].name; setThumb('tRef', e.target.files[0]); }
 });
 
 /* Exportar: desenha SEM o print, baixa o PNG e volta ao modo de edição */
@@ -787,10 +922,6 @@ cv.addEventListener('pointermove', e => {
 });
 ['pointerup','pointercancel'].forEach(t => cv.addEventListener(t, () => { drag = null; cv.style.cursor = ''; }));
 
-/* Botão "Segure: sem print": enquanto pressionado mostra o resultado limpo */
-const peek = document.getElementById('btnPeek');
-peek.addEventListener('pointerdown', () => draw(false));
-['pointerup','pointerleave','pointercancel'].forEach(t => peek.addEventListener(t, () => draw()));
 
 /* ---------- Configurações guardadas no aparelho (localStorage) ---------- */
 const DEFAULTS = { ...state };                       // cópia dos valores de fábrica (usada em "Repor")
@@ -809,14 +940,13 @@ try {                                                // restaura a sessão anter
     OUT.w = s.W; OUT.h = s.H;                 // tamanho em que a dock foi ajustada (applySize reescala se mudar)
     document.getElementById('outMode').value = s.mode || 'auto';
     document.getElementById('outW').value = s.W; document.getElementById('outH').value = s.H;
-    document.getElementById('showRef').checked = state.showRef !== false;
     needReset = false;                               // mantém a dock da sessão anterior
   }
 } catch (e) {}
 document.getElementById('btnReset').addEventListener('click', () => {
   try { localStorage.removeItem('dockSettings'); } catch (e) {}
   Object.assign(state, DEFAULTS);                    // volta aos valores de fábrica
-  document.getElementById('outMode').value = 'auto';
+  document.getElementById('outMode').value = (typeof DO !== 'undefined' && DO) ? 'device' : 'auto';   // no APK o padrão é a tela do aparelho
   applySize(); resetDock(); syncInputs(); draw();
 });
 
@@ -903,11 +1033,7 @@ async function alinhar(){
     alert('Ative "Exibir sobre outros apps" para o Dock Líquida, volte ao app e toque em Alinhar de novo.');
     return;
   }
-  if (!ref){                                                  // sem print: usa a resolução física do aparelho
-    document.getElementById('outMode').value = 'custom';
-    document.getElementById('outW').value = Math.round(screen.width * devicePixelRatio);
-    document.getElementById('outH').value = Math.round(screen.height * devicePixelRatio);
-  }
+  document.getElementById('outMode').value = 'device';          // alinha na resolução física do aparelho (a mesma da tela inicial real)
   applySize(); syncInputs(); schedule();
   await DO.start({ x: state.x, y: state.y, w: state.w, h: state.h, r: state.r, outW: OUT.w, outH: OUT.h });   // abre a sobreposição e vai para a tela inicial
 }
@@ -927,15 +1053,16 @@ if (DO){
    Gera o PNG em tamanho real e entrega ao Android (WallpaperManager), no plugin DockOverlay. */
 const btnApply = document.getElementById('btnApply');
 if (DO){
-  document.getElementById('rowAlvo').style.display = 'flex';   // mostra "Aplicar em" e o botão (só existem no APK)
   btnApply.style.display = '';
   btnApply.addEventListener('click', async () => {
+    const alvo = await escolherAlvo();                        // pergunta onde aplicar: tela inicial, bloqueio ou ambas
+    if (!alvo) return;
     btnApply.disabled = true; btnApply.textContent = 'Aplicando…';
     try {
       draw(false, true);                                         // tamanho real, sem o print
       const png = cv.toDataURL('image/png');
       draw();                                                    // volta para a prévia leve
-      await DO.setWallpaper({ data: png.split(',')[1], target: document.getElementById('selAlvo').value });
+      await DO.setWallpaper({ data: png.split(',')[1], target: alvo });
       alert('Papel de parede aplicado!');
     } catch (err) {
       draw();
@@ -1058,19 +1185,6 @@ dtabs.addEventListener('click', e => { const b = e.target.closest('button'); if 
 secs.forEach(d => d.open = true);                              // todas as seções ficam abertas
 setTab('base');
 
-/* ☰ abre o mesmo menu do botão dividido (Aplicar, alta resolução, projetos), logo abaixo do botão */
-const btnMenu = document.getElementById('btnMenu');
-btnMenu.addEventListener('click', e => {
-  e.stopPropagation();                                         // senão o clique "fora do menu" o fecharia na hora
-  if (menu.hidden || menu.dataset.from !== 'top'){
-    const r = btnMenu.getBoundingClientRect();
-    Object.assign(menu.style, { position: 'fixed', top: (r.bottom + 6) + 'px', right: '12px', bottom: 'auto' });
-    menu.dataset.from = 'top'; menu.hidden = false;
-  } else fecharMenu();
-});
-arrow.addEventListener('click', () => {                        // a seta do rodapé volta a abrir o menu em cima do botão dividido
-  if (menu.dataset.from === 'top'){ menu.removeAttribute('style'); delete menu.dataset.from; }
-});
 
 /* ---------- v9: cores dinâmicas (Material 3 / Material You) ----------
    No APK (Android 12+) usa a paleta real do sistema. No navegador, gera a paleta a partir do wallpaper carregado.
@@ -1101,7 +1215,7 @@ function oklchHex(L, C, H){
 
 /* Cor de uma paleta (a1 = primária, a2 = secundária, n1/n2 = neutras) em um tom Material */
 function tone(p, t){
-  if (SYS && SYS[p]){                              // paleta do sistema: pega o tom mais próximo disponível
+  if (SYS && SYS[p] && !(typeof PREF !== 'undefined' && PREF && PREF.cores === 'wallpaper')){                              // paleta do sistema: pega o tom mais próximo disponível
     let best = SHADES[0];
     for (const s of SHADES) if (Math.abs(s[1] - t) < Math.abs(best[1] - t)) best = s;
     return SYS[p][best[0]];
@@ -1112,7 +1226,7 @@ function tone(p, t){
 
 /* Papéis de cor do Material 3 ligados às variáveis do app */
 function applyTheme(){
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches, T = tone;
+  const dark = (typeof PREF !== 'undefined' && PREF && PREF.tema !== 'auto') ? PREF.tema === 'escuro' : matchMedia('(prefers-color-scheme: dark)').matches, T = tone;
   const v = dark
     ? { '--bg': T('n1',6),  '--panel': T('n1',12), '--card': T('n1',17), '--line': T('n2',30), '--text': T('n1',90), '--mute': T('n2',80), '--acc': T('a1',80), '--acc-fg': T('a1',20),  '--sc': T('a2',30), '--stage': T('n1',4) }
     : { '--bg': T('n1',96), '--panel': T('n1',94), '--card': T('n1',98), '--line': T('n2',80), '--text': T('n1',10), '--mute': T('n2',30), '--acc': T('a1',40), '--acc-fg': T('a1',100), '--sc': T('a2',90), '--stage': T('n1',10) };
@@ -1143,6 +1257,238 @@ setWall = function (img){
 };
 if (DO && DO.getSystemColors) DO.getSystemColors().then(c => { if (c && c.a1 && c.n1){ SYS = c; applyTheme(); } }).catch(() => {});   // APK: paleta real do sistema
 applyTheme();
+
+/* ---------- v10: áreas seguras reais (barras do sistema) ---------- */
+async function sincronizarInsets(){                // pede ao Android quanto do WebView fica sob as barras de status/navegação
+  if (!DO || !DO.getInsets) return;
+  try {
+    const i = await DO.getInsets(), s = document.documentElement.style;
+    s.setProperty('--sat', (i.top || 0) + 'px'); s.setProperty('--sab', (i.bottom || 0) + 'px');
+  } catch (e) {}
+}
+sincronizarInsets(); addEventListener('resize', sincronizarInsets); setTimeout(sincronizarInsets, 600);
+
+/* ---------- v11: telas, galeria com histórico e preferências ----------
+   As imagens ficam no IndexedDB do app (armazenamento privado, sobrevive a reinícios), com miniatura gerada já reduzida.
+   A navegação usa a pilha de histórico do WebView, então o botão Voltar do Android funciona entre as telas. */
+const $ = id => document.getElementById(id);
+const APP_VERSION = '1.1.0';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+
+/* Preferências guardadas no aparelho */
+const PREF_PADRAO = { tema: 'auto', cores: 'sistema', editorInicio: false, qualidade: 1 };
+var PREF = { ...PREF_PADRAO };                      // var: applyTheme() pode ser chamada antes desta linha
+try { Object.assign(PREF, JSON.parse(localStorage.getItem('dockPrefs') || '{}')); } catch (e) {}
+const salvarPrefs = () => { try { localStorage.setItem('dockPrefs', JSON.stringify(PREF)); } catch (e) {} };
+const _pf = previewFactor;                          // "Qualidade da prévia" multiplica a resolução do desenho
+previewFactor = function () { return Math.min(1, Math.max(.15, _pf() * PREF.qualidade)); };
+
+/* Aviso rápido */
+let toastT;
+function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600); }
+
+/* ----- Banco de imagens (IndexedDB) ----- */
+const DB = (() => {
+  let dbp;
+  const abrir = () => dbp || (dbp = new Promise((ok, erro) => {
+    const r = indexedDB.open('dockliquida', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('wallpapers', { keyPath: 'id' });
+    r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error);
+  }));
+  const tx = async (modo, fn) => {
+    const db = await abrir();
+    return new Promise((ok, erro) => {
+      const t = db.transaction('wallpapers', modo), req = fn(t.objectStore('wallpapers'));
+      t.oncomplete = () => ok(req && req.result); t.onerror = t.onabort = () => erro(t.error);
+    });
+  };
+  return { all: () => tx('readonly', s => s.getAll()), get: id => tx('readonly', s => s.get(id)),
+           put: rec => tx('readwrite', s => s.put(rec)), del: id => tx('readwrite', s => s.delete(id)), clear: () => tx('readwrite', s => s.clear()) };
+})();
+
+const LIMITE = 20;                                  // máximo de imagens no histórico
+let gal = [], curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
+try { FR = JSON.parse(localStorage.getItem('dockFrames') || '{}'); } catch (e) {}
+const salvarFR = () => { try { localStorage.setItem('dockFrames', JSON.stringify(FR)); } catch (e) {} };
+async function carregarGaleria(){
+  try { gal = (await DB.all()).sort((a, b) => b.added - a.added); }
+  catch (e) { gal = []; toast('Não foi possível ler o histórico.'); }
+}
+
+/* Identificador = hash dos primeiros 256 KB + tamanho: a mesma foto escolhida de novo não duplica */
+async function idDe(f){
+  if (window.crypto && crypto.subtle){
+    const h = await crypto.subtle.digest('SHA-256', await f.slice(0, 262144).arrayBuffer());
+    return [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('') + '-' + f.size;
+  }
+  return f.name + '-' + f.size + '-' + f.lastModified;
+}
+async function miniatura(f){                         // decodifica já reduzido (360 px de largura): não carrega a foto inteira só para a miniatura
+  const bmp = await createImageBitmap(f, { resizeWidth: 360, resizeQuality: 'medium' });
+  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+  c.getContext('2d').drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+  return new Promise(ok => c.toBlob(ok, 'image/jpeg', .82));
+}
+
+async function adicionar(arquivos){
+  let ultimo = null, falhas = 0;
+  for (const f of arquivos){
+    try {
+      if (!/^image\//.test(f.type)) throw new Error('não é imagem');
+      const id = await idDe(f), antigo = gal.find(g => g.id === id);
+      await DB.put(antigo ? { ...antigo, added: Date.now() }                     // já existe: só sobe para o topo
+                          : { id, name: f.name || 'imagem', blob: f, thumb: await miniatura(f), added: Date.now() });
+      await carregarGaleria();
+      ultimo = id;
+    } catch (e) { falhas++; }
+  }
+  for (const extra of gal.slice(LIMITE)) if (extra.id !== curId){ await DB.del(extra.id).catch(() => {}); delete FR[extra.id]; }   // mantém só os 20 mais recentes
+  salvarFR(); await carregarGaleria();
+  const aviso = falhas ? (falhas === arquivos.length ? 'Não foi possível ler essa imagem.' : falhas + ' imagem(ns) não puderam ser lidas.') : '';
+  const trocou = ultimo ? await selecionar(ultimo) : false;       // um único aviso: o de seleção e o de falha não se apagam
+  if (trocou || aviso) toast([trocou ? 'Wallpaper selecionado.' : '', aviso].filter(Boolean).join(' '));
+  redesenharTelas();
+}
+
+function guardarEnquadramento(){ if (curId){ FR[curId] = { zoom: state.zoom, panX: state.panX, panY: state.panY }; salvarFR(); } }
+async function selecionar(id){
+  guardarEnquadramento();                            // salva o enquadramento do wallpaper que está saindo
+  const rec = gal.find(g => g.id === id);
+  if (!rec) return false;
+  try {
+    const bmp = await createImageBitmap(rec.blob);
+    setWall(bmp);                                    // troca o fundo (e o tema, se as cores vierem do wallpaper)
+    const fr = FR[id] || { zoom: 100, panX: 0, panY: 0 };
+    state.zoom = fr.zoom; state.panX = fr.panX; state.panY = fr.panY;   // enquadramento guardado desse wallpaper
+    curId = id; hasWall = true;
+    try { localStorage.setItem('dockCurrent', id); } catch (e) {}
+    $('nWall').textContent = rec.name; setThumb('tWall', rec.blob);
+    syncInputs(); schedule();
+    return true;
+  } catch (e) {                                      // arquivo indisponível ou corrompido
+    await DB.del(id).catch(() => {}); delete FR[id]; salvarFR(); await carregarGaleria();
+    toast('Imagem indisponível. Removida do histórico.'); redesenharTelas();
+    return false;
+  }
+}
+async function remover(id){
+  try { await DB.del(id); } catch (e) {}
+  delete FR[id]; salvarFR();
+  if (id === curId){ curId = null; try { localStorage.removeItem('dockCurrent'); } catch (e) {} }
+  await carregarGaleria(); redesenharTelas(); toast('Removida do histórico.');
+}
+
+/* Salvar o enquadramento enquanto ele é ajustado (aproveita o gancho de salvamento que já existe) */
+const _saveSoon = saveSoon; let frT;
+saveSoon = function(){ _saveSoon(); clearTimeout(frT); frT = setTimeout(guardarEnquadramento, 700); };
+$('btnFitReset').addEventListener('click', () => { state.zoom = 100; state.panX = 0; state.panY = 0; syncInputs(); schedule(); });
+
+/* ----- Telas ----- */
+let urls = [];
+const urlDe = rec => { const u = URL.createObjectURL(rec.thumb); urls.push(u); return u; };
+const limparUrls = () => { urls.forEach(u => URL.revokeObjectURL(u)); urls = []; };
+
+function desenharHome(){
+  limparUrls();
+  $('heroImg').hidden = !hasWall; $('heroEmpty').hidden = hasWall;
+  if (hasWall){ draw(false); $('heroImg').src = cv.toDataURL('image/jpeg', .85); draw(); }   // foto da prévia atual (sem o print), com a Dock
+  $('hPick').textContent = hasWall ? 'Trocar wallpaper' : 'Escolher wallpaper';
+  $('hRecent').innerHTML = gal.length
+    ? gal.slice(0, 8).map(g => `<button class="rc${g.id === curId ? ' sel' : ''}" type="button" data-id="${esc(g.id)}" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""></button>`).join('')
+    : '<div class="none">Os wallpapers que você escolher aparecem aqui.</div>';
+}
+function desenharGaleria(){
+  limparUrls();
+  $('gEmpty').hidden = gal.length > 0;
+  $('gGrid').innerHTML = gal.map(g => `<div class="gi${g.id === curId ? ' sel' : ''}" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""><i class="chk">&#10003;</i><button class="x" type="button" aria-label="Remover do histórico">&times;</button></div>`).join('');
+}
+const marcarSeg = (id, v) => [...$(id).children].forEach(b => b.classList.toggle('on', b.dataset.v === v));
+function desenharConfig(){
+  marcarSeg('sTema', PREF.tema); marcarSeg('sCores', PREF.cores); marcarSeg('sQual', String(PREF.qualidade));
+  $('sEditor').checked = PREF.editorInicio;
+  $('rowCores').hidden = !SYS;                       // a paleta do sistema só existe no APK (Android 12+)
+  $('sHistN').textContent = gal.length + (gal.length === 1 ? ' imagem' : ' imagens');
+  $('sHistClear').disabled = !gal.length;
+  $('sVer').textContent = APP_VERSION;
+}
+const VISTAS = { home: ['v-home', desenharHome], gallery: ['v-gallery', desenharGaleria], settings: ['v-settings', desenharConfig] };
+let vista = 'home';
+function mostrar(nome){
+  vista = VISTAS[nome] ? nome : (nome === 'editor' ? 'editor' : 'home');
+  for (const k in VISTAS) $(VISTAS[k][0]).classList.toggle('on', k === vista);
+  if (VISTAS[vista]) VISTAS[vista][1]();
+  else { fitPhone(); schedule(); }                   // voltou ao editor
+}
+const redesenharTelas = () => { if (VISTAS[vista]) VISTAS[vista][1](); };
+function ir(nome, substituir){
+  if (nome === vista && !substituir) return;
+  history[substituir ? 'replaceState' : 'pushState']({ v: nome }, '');
+  mostrar(nome);
+}
+const voltar = () => { if (history.length > 1) history.back(); else ir('home', true); };
+addEventListener('popstate', e => mostrar((e.state && e.state.v) || 'home'));
+
+document.addEventListener('click', e => {           // botões de navegação de todas as telas
+  const go = e.target.closest('[data-go]'), back = e.target.closest('[data-back]');
+  if (go) ir(go.dataset.go);
+  if (back) voltar();
+});
+$('eBack').addEventListener('click', () => ir('home'));
+$('hDock').addEventListener('click', () => ir('editor'));
+['hPick', 'gAdd', 'gAdd2'].forEach(id => $(id).addEventListener('click', () => $('gFile').click()));   // seletor de fotos do Android: não pede permissão de armazenamento
+$('gFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionar(fs); });
+$('fWall').addEventListener('change', e => {         // o cartão "Papel de parede final" do editor também passa pelo histórico
+  e.stopImmediatePropagation(); const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionar(fs);
+}, true);
+$('hRecent').addEventListener('click', async e => { const b = e.target.closest('.rc'); if (b && await selecionar(b.dataset.id)) desenharHome(); });
+$('gGrid').addEventListener('click', async e => {
+  const item = e.target.closest('.gi'); if (!item) return;
+  if (e.target.closest('.x')){ remover(item.dataset.id); return; }
+  if (await selecionar(item.dataset.id)){ toast('Wallpaper selecionado.'); voltar(); }
+});
+$('gGrid').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('gi')) e.target.click(); });
+$('splitMenu').addEventListener('click', e => {      // itens de navegação do menu do editor (captura: não chegam ao tratador antigo)
+  const b = e.target.closest('button'); if (!b || !/^nav-/.test(b.dataset.act || '')) return;
+  e.stopPropagation(); fecharMenu(); ir(b.dataset.act === 'nav-home' ? 'home' : 'settings');
+}, true);
+
+/* Configurações */
+$('sTema').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.tema = b.dataset.v; salvarPrefs(); applyTheme(); marcarSeg('sTema', PREF.tema); } });
+$('sCores').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.cores = b.dataset.v; salvarPrefs(); applyTheme(); marcarSeg('sCores', PREF.cores); } });
+$('sQual').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.qualidade = +b.dataset.v; salvarPrefs(); marcarSeg('sQual', b.dataset.v); schedule(); } });
+$('sEditor').addEventListener('change', e => { PREF.editorInicio = e.target.checked; salvarPrefs(); });
+$('sHistClear').addEventListener('click', async () => {
+  if (!gal.length || !confirm('Apagar todo o histórico de wallpapers? A imagem aberta no editor continua lá.')) return;
+  try { await DB.clear(); } catch (e) {}
+  FR = {}; salvarFR(); curId = null; try { localStorage.removeItem('dockCurrent'); } catch (e) {}
+  await carregarGaleria(); desenharConfig(); toast('Histórico apagado.');
+});
+$('sRestore').addEventListener('click', () => {
+  if (!confirm('Restaurar todas as configurações para o padrão? O histórico de wallpapers não é apagado.')) return;
+  Object.assign(PREF, PREF_PADRAO); salvarPrefs();
+  $('btnReset').click();                             // reaproveita a restauração que já existia (Dock, vidro, tamanho)
+  applyTheme(); desenharConfig(); toast('Configurações restauradas.');
+});
+
+/* Início do app: reabre o último wallpaper e escolhe a tela inicial */
+(async () => {
+  await carregarGaleria();
+  let id = null; try { id = localStorage.getItem('dockCurrent'); } catch (e) {}
+  if (id && gal.some(g => g.id === id)) await selecionar(id);
+  const inicio = PREF.editorInicio && hasWall ? 'editor' : 'home';
+  history.replaceState({ v: inicio }, ''); mostrar(inicio);
+})();
+applyTheme();                                        // aplica de novo agora que as preferências existem
+
+/* ---------- v12: sem print de referência; destino do wallpaper escolhido na hora de aplicar ---------- */
+function escolherAlvo(){                             // caixa "Aplicar em": devolve 'home', 'lock', 'both' ou null (cancelou)
+  return new Promise(ok => {
+    const d = $('alvoDlg'); d.hidden = false;
+    const fim = v => { d.hidden = true; d.onclick = null; ok(v); };
+    d.onclick = e => { const b = e.target.closest('[data-alvo]'); if (b) fim(b.dataset.alvo || null); else if (e.target === d) fim(null); };
+  });
+}
+if (DO && !localStorage.getItem('dockSettings')) $('outMode').value = 'device';   // primeira vez no APK: o PNG sai na resolução da tela do aparelho
 
 /* Arranque */
 setWall(wall);
