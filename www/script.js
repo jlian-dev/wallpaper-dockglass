@@ -43,7 +43,6 @@ const state = {
   y: 0,          // distância do topo da dock até o topo da imagem (px)
   w: 0, h: 0,    // largura e altura da dock (px)
   r: 0,          // raio da curvatura dos cantos (px)
-  refOpacity: 50,// opacidade do print de referência (0–100)
   blur: 18,      // desfoque do fundo atrás do vidro (px)
   ior: 1.5,      // índice de refração do vidro (1 = ar, 1.5 = vidro)
   thick: 60,     // espessura do vidro (px)
@@ -62,7 +61,7 @@ const state = {
 // Lista que gera os botões -1 / +1 (chave do estado, rótulo na tela)
 const STEPPERS = [['y','Posição Y'],['x','Posição X'],['w','Largura'],['h','Altura'],['r','Curvatura']];
 // Lista que gera os sliders (chave, rótulo, mínimo, máximo)
-const SLIDERS = [['refOpacity','Opacidade do print',0,100],['blur','Desfoque do vidro',0,60],
+const SLIDERS = [['blur','Desfoque do vidro',0,60],
                  ['bevel','Largura do bisel',8,150],['thick','Espessura do vidro',4,200],
                  ['ior','Índice de refração',1,2,0.01],['scale','Escala da refração',0,150],
                  ['chroma','Aberração cromática',0,30],['shine','Brilho especular',0,100],['angle','Ângulo da luz',-180,180]];
@@ -181,7 +180,7 @@ function previewFactor(){
   if (mobile){                                           // celular: usa o tamanho real da caixa da prévia na tela
     const r = cv.getBoundingClientRect();
     if (r.width && OUT.h){
-      const s = document.body.classList.contains('live') ? r.height/OUT.h : Math.min(r.width/OUT.w, r.height/OUT.h);
+      const s = Math.min(r.width/OUT.w, r.height/OUT.h);
       return Math.min(1, Math.max(0.2, s * Math.min(devicePixelRatio || 1, 2)));
     }
   }
@@ -189,21 +188,21 @@ function previewFactor(){
   const altura = innerHeight * (mobile ? (big ? .74 : .46) : .8);       // altura que a prévia ocupa na tela (px CSS)
   return Math.min(1, Math.max(0.2, altura * Math.min(devicePixelRatio || 1, 2) / OUT.h));
 }
-function draw(showRef = state.showRef !== false, full = false){
+function draw(full = false){
   const f = full ? (typeof full === 'number' ? full : 1) : previewFactor();   // full pode ser um número (2 = dobro do tamanho)
   const saved = { ...state };                                            // guarda os valores reais
   SCALED.forEach(k => state[k] = Math.round(saved[k]*f));                // versão reduzida só para este desenho
   const tw = Math.round(OUT.w*f), th = Math.round(OUT.h*f);
   if (cv.width !== tw) cv.width = tw;                                    // redimensionar o canvas é caro: só se mudou
   if (cv.height !== th) cv.height = th;
-  try { render(showRef); } finally { Object.assign(state, saved); }     // devolve os valores reais
+  try { render(); } finally { Object.assign(state, saved); }     // devolve os valores reais
 }
-function render(showRef){
+function render(){
   const W = cv.width, H = cv.height;
   ctx.clearRect(0,0,W,H);
   const key = [W, H, state.zoom, state.panX, state.panY, state.wpBlur, wallId].join('|');   // "assinatura" do fundo
   if (key !== baseKey){ baseCv.width = W; baseCv.height = H; drawCover(wall, false, baseCv.getContext('2d')); baseKey = key; }
-  if (!document.body.classList.contains('live')) ctx.drawImage(baseCv, 0, 0);   // ao vivo: não pinta o fundo (a tela inicial real aparece por trás)
+  ctx.drawImage(baseCv, 0, 0);
   const gkey = key + '|' + state.blur;               // o vidro só é recalculado se o fundo ou o desfoque mudarem
   if (gkey !== glassKey){ buildGlass(); glassKey = gkey; }               // 1) papel de parede
   drawDock();                                    // 2) dock de vidro
@@ -414,9 +413,9 @@ document.getElementById('fWall').addEventListener('change', async e => {
   if (e.target.files[0]) { setWall(await createImageBitmap(e.target.files[0])); document.getElementById('nWall').textContent = e.target.files[0].name; setThumb('tWall', e.target.files[0]); }
 });
 
-/* Exportar: desenha SEM o print, baixa o PNG e volta ao modo de edição */
-document.getElementById('btnExport').addEventListener('click', () => {
-  draw(false, true);   // exporta no tamanho real, sem a redução da prévia
+/* Exportar: gera o PNG em tamanho real, baixa (ou abre o Compartilhar no APK) e volta ao modo de edição */
+function baixarPng(){
+  draw(true);   // exporta no tamanho real, sem a redução da prévia
   cv.toBlob(blob => {
     const P = window.Capacitor && Capacitor.Plugins;
     if (P && P.Filesystem && P.Share && Capacitor.isNativePlatform()){   // dentro do APK: downloads por blob não funcionam, então abre o menu Compartilhar
@@ -437,7 +436,7 @@ document.getElementById('btnExport').addEventListener('click', () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     draw();                                       // restaura a pré-visualização
   }, 'image/png');
-});
+}
 
 /* Mudou o modo ou o tamanho personalizado: recalcula o quadro e redesenha */
 ['outMode','outW','outH'].forEach(id => document.getElementById(id).addEventListener('change', () => { applySize(); syncInputs(); draw(); }));
@@ -456,8 +455,6 @@ panel.addEventListener('pointerdown', e => {
 let drag = null;
 const toCanvas = e => {                                        // converte a posição da tela para pixels do canvas
   const r = cv.getBoundingClientRect();
-  if (document.body.classList.contains('live'))        // modo ao vivo: o canvas é esticado na tela toda
-    return [(e.clientX - r.left)*OUT.w/r.width, (e.clientY - r.top)*OUT.h/r.height];
   const s = Math.min(r.width/OUT.w, r.height/OUT.h);     // escala do object-fit: contain (sobram faixas nas laterais)
   return [(e.clientX - r.left - (r.width - OUT.w*s)/2)/s, (e.clientY - r.top - (r.height - OUT.h*s)/2)/s];   // sempre em pixels do tamanho real
 };
@@ -523,59 +520,9 @@ if (!CanvasRenderingContext2D.prototype.roundRect){
   };
 }
 
-/* Acordeão: abrir uma seção fecha as outras (menos rolagem no celular).
-   Ligado após o carregamento para não fechar as seções que já começam abertas. */
-setTimeout(() => {
-  const todas = document.querySelectorAll('#panel details');
-  todas.forEach(d => d.addEventListener('toggle', () => { if (d.open) todas.forEach(o => { if (o !== d) o.open = false; }); }));
-}, 500);
-
-/* ---------- Celular: abas do painel inferior ---------- */
-const secs = [...panel.querySelectorAll('details')];
-const tabs = document.createElement('nav'); tabs.className = 'tabs';
-const NOMES = ['Imagens', 'Papel de parede', 'Dock', 'Vidro'];     // nomes curtos para as abas
-secs.forEach((d, i) => {
-  const b = document.createElement('button'); b.type = 'button'; b.textContent = NOMES[i] || ('Seção ' + (i+1));
-  b.addEventListener('click', () => {
-    if (d.open && !panel.classList.contains('min')) panel.classList.add('min');   // tocar na aba ativa recolhe o painel
-    else { panel.classList.remove('min'); secs.forEach(o => o.open = (o === d)); }
-    marcarAbas();
-  });
-  tabs.append(b);
-});
-function marcarAbas(){
-  const bts = tabs.querySelectorAll('button');
-  let ativa = 0;
-  bts.forEach((b, i) => { b.classList.toggle('on', secs[i].open && !panel.classList.contains('min')); if (secs[i].open) ativa = i; });
-  tabs.style.setProperty('--i', ativa);                       // posição do indicador deslizante
-}
-tabs.insertAdjacentHTML('afterbegin', '<span class="seg-ind"></span>');   // indicador do segmented control
-panel.insertBefore(tabs, secs[0]);
-if (innerWidth <= 820) secs.forEach((d, i) => d.open = (i === 0));      // no celular começa só com a primeira aberta
-marcarAbas();
-
-/* A altura do painel define o espaço que sobra para a prévia (variável CSS --sheet) */
-const sheetVar = () => document.documentElement.style.setProperty('--sheet', panel.offsetHeight + 'px');
-new ResizeObserver(() => { sheetVar(); schedule(); }).observe(panel);
-addEventListener('resize', () => { sheetVar(); schedule(); });
-
-/* ---------- Tela inicial ao vivo (experimental, só no APK) ----------
-   O app fica transparente e a tela inicial verdadeira aparece por trás; só a dock é desenhada por cima.
-   Precisa do ajuste Android descrito no LEIA-ME (patch-android.js). */
+/* ---------- Botão "Alinhar sobre a tela inicial" (só aparece no APK) ---------- */
 const liveBtn = document.getElementById('btnLive');
 if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) liveBtn.style.display = 'block';
-liveBtn.addEventListener('click', () => {
-  if (!document.body.classList.contains('live')) return;   // modo transparente antigo desativado (substituído pela sobreposição nativa)
-  const on = document.body.classList.toggle('live');
-  liveBtn.textContent = on ? 'Sair da tela inicial ao vivo' : 'Tela inicial ao vivo (experimental)';
-  document.getElementById('outMode').value = on ? 'custom' : 'auto';
-  if (on){                                          // tamanho = resolução física do aparelho, para alinhar 1:1
-    document.getElementById('outW').value = Math.round(screen.width * devicePixelRatio);
-    document.getElementById('outH').value = Math.round(screen.height * devicePixelRatio);
-    panel.classList.remove('hide'); stageEl.classList.remove('big');
-  }
-  applySize(); syncInputs(); schedule();
-});
 
 /* ---------- Alinhar sobre a tela inicial REAL (sobreposição nativa do Android) ----------
    O plugin DockOverlay (Java, instalado pelo patch-android.js) mostra o contorno da dock e uma barra de
@@ -606,27 +553,20 @@ if (DO){
 
 /* ---------- Aplicar direto como papel de parede (sem baixar nem salvar) ----------
    Gera o PNG em tamanho real e entrega ao Android (WallpaperManager), no plugin DockOverlay. */
-const btnApply = document.getElementById('btnApply');
-if (DO){
-  btnApply.style.display = '';
-  btnApply.addEventListener('click', async () => {
-    const alvo = await escolherAlvo();                        // pergunta onde aplicar: tela inicial, bloqueio ou ambas
-    if (!alvo) return;
-    btnApply.disabled = true; btnApply.textContent = 'Aplicando…';
-    try {
-      draw(false, true);                                         // tamanho real, sem o print
-      const png = cv.toDataURL('image/png');
-      draw();                                                    // volta para a prévia leve
-      await DO.setWallpaper({ data: png.split(',')[1], target: alvo });
-      alert('Papel de parede aplicado!');
-    } catch (err) {
-      draw();
-      alert('Não foi possível aplicar: ' + (err && err.message ? err.message : err));
-    }
-    btnApply.disabled = false; btnApply.textContent = 'Aplicar';
-  });
-} else {
-  document.getElementById('btnExport').classList.add('primary');   // no navegador, "Baixar PNG" é o botão principal
+async function aplicarWallpaper(){
+  if (!DO) return;
+  const alvo = await escolherAlvo();                        // pergunta onde aplicar: tela inicial, bloqueio ou ambas
+  if (!alvo) return;
+  try {
+    draw(true);                                             // tamanho real
+    const png = cv.toDataURL('image/png');
+    draw();                                                 // volta para a prévia leve
+    await DO.setWallpaper({ data: png.split(',')[1], target: alvo });
+    alert('Papel de parede aplicado!');
+  } catch (err) {
+    draw();
+    alert('Não foi possível aplicar: ' + (err && err.message ? err.message : err));
+  }
 }
 
 /* ---------- v6: interface (miniaturas, mockup, handle e botão dividido) ---------- */
@@ -652,20 +592,6 @@ const _draw = draw;                                           // a lógica do ca
 draw = function (...a){ fitPhone(); return _draw(...a); };
 new ResizeObserver(() => { fitPhone(); schedule(); }).observe(pwrap);
 
-/* Handle do painel: arraste para baixo recolhe, para cima expande, toque alterna */
-const handle = document.createElement('div'); handle.className = 'handle'; handle.innerHTML = '<i></i>';
-panel.prepend(handle);
-let y0 = null;
-handle.addEventListener('pointerdown', e => { y0 = e.clientY; handle.setPointerCapture(e.pointerId); });
-handle.addEventListener('pointerup', e => {
-  if (y0 === null) return;
-  const dy = e.clientY - y0; y0 = null;
-  if (dy > 40) panel.classList.add('min');
-  else if (dy < -40) panel.classList.remove('min');
-  else panel.classList.toggle('min');
-  marcarAbas();
-});
-
 /* Entrega um arquivo: no APK abre o menu Compartilhar; no navegador baixa */
 function entregar(blob, nome){
   const P = window.Capacitor && Capacitor.Plugins;
@@ -688,7 +614,7 @@ function entregar(blob, nome){
 async function baixarAltaRes(){                              // 2× o tamanho (limitado a 4096 px no lado maior)
   const f = Math.min(2, 4096 / Math.max(OUT.w, OUT.h));
   try {
-    draw(false, f);
+    draw(f);
     const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
     draw();
     await entregar(blob, 'wallpaper-liquid-glass-2x.png');
@@ -702,7 +628,7 @@ function salvarProjeto(){                                      // guarda todos o
 /* Botão dividido: o principal baixa o PNG; a seta abre as outras ações */
 const arrow = document.getElementById('splitArrow'), menu = document.getElementById('splitMenu');
 const fecharMenu = () => { menu.hidden = true; arrow.setAttribute('aria-expanded', 'false'); };
-document.getElementById('splitMain').addEventListener('click', () => { fecharMenu(); document.getElementById('btnExport').click(); });
+document.getElementById('splitMain').addEventListener('click', () => { fecharMenu(); baixarPng(); });
 arrow.addEventListener('click', e => {
   e.stopPropagation(); menu.hidden = !menu.hidden;
   arrow.setAttribute('aria-expanded', String(!menu.hidden));
@@ -711,7 +637,7 @@ document.addEventListener('click', e => { if (!document.getElementById('split').
 menu.addEventListener('click', e => {
   const b = e.target.closest('button[data-act]'); if (!b) return;
   fecharMenu();
-  ({ apply: () => btnApply.click(), hires: baixarAltaRes, project: salvarProjeto, open: () => document.getElementById('fProj').click() })[b.dataset.act]();
+  ({ apply: aplicarWallpaper, hires: baixarAltaRes, project: salvarProjeto, open: () => document.getElementById('fProj').click() })[b.dataset.act]();
 });
 if (DO) document.getElementById('actApply').hidden = false;   // "Aplicar" só existe no APK
 
@@ -737,7 +663,6 @@ function setTab(t){                                            // Base = Imagens
   panel.scrollTop = 0;
 }
 dtabs.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.t); });
-secs.forEach(d => d.open = true);                              // todas as seções ficam abertas
 setTab('base');
 
 
@@ -946,7 +871,7 @@ const limparUrls = () => { urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
 function desenharHome(){
   limparUrls();
   $('heroImg').hidden = !hasWall; $('heroEmpty').hidden = hasWall;
-  if (hasWall){ draw(false); $('heroImg').src = cv.toDataURL('image/jpeg', .85); draw(); }   // foto da prévia atual (sem o print), com a Dock
+  if (hasWall){ draw(); $('heroImg').src = cv.toDataURL('image/jpeg', .85); draw(); }   // foto da prévia atual, com a Dock
   $('hPick').textContent = hasWall ? 'Trocar wallpaper' : 'Escolher wallpaper';
   $('hRecent').innerHTML = gal.length
     ? gal.slice(0, 8).map(g => `<button class="rc${g.id === curId ? ' sel' : ''}" type="button" data-id="${esc(g.id)}" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""></button>`).join('')
