@@ -532,7 +532,6 @@ summary::-webkit-details-marker {
 /* Botão dividido: ação principal + seta que abre o menu. */
 .split {
   position: relative;
-  overflow: visible;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -574,25 +573,17 @@ summary::-webkit-details-marker {
   transform: rotate(45deg) translate(-2px,-2px);
 }
 
-/* Menu que abre acima do botão. */
-
+/* Menu que abre acima do botão. É "fixed" para o painel (que rola) não cortá-lo; o JavaScript (posicionarMenu) define right, bottom e max-height. */
 .split-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 10px);
+  position: fixed;
   min-width: 240px;
-  max-width: calc(100vw - 32px);
-  max-height: min(65dvh, 520px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
   padding: 6px;
   border-radius: 16px;
-  z-index: 1000;
+  z-index: 30;
   border: 1px solid var(--line);
   box-shadow: 0 12px 32px rgba(30,45,42,.25);
   background: var(--card);
 }
-
 
 /* Itens do menu. */
 .split-menu button {

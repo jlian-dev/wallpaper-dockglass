@@ -629,10 +629,22 @@ function salvarProjeto(){                                      // guarda todos o
 const arrow = document.getElementById('splitArrow'), menu = document.getElementById('splitMenu');
 const fecharMenu = () => { menu.hidden = true; arrow.setAttribute('aria-expanded', 'false'); };
 document.getElementById('splitMain').addEventListener('click', () => { fecharMenu(); baixarPng(); });
+/* O menu abre para cima, ancorado na seta. Ele é "fixed" (relativo à tela) porque o painel rola por dentro
+   e cortaria tudo o que passasse do topo dele. Se não couber, o próprio menu rola. */
+function posicionarMenu(){
+  const r = arrow.getBoundingClientRect();
+  Object.assign(menu.style, {
+    right: Math.max(8, innerWidth - r.right) + 'px',      // alinhado à direita da seta
+    bottom: (innerHeight - r.top + 8) + 'px',             // logo acima do botão
+    maxHeight: Math.max(140, r.top - 16) + 'px', overflowY: 'auto'
+  });
+}
 arrow.addEventListener('click', e => {
   e.stopPropagation(); menu.hidden = !menu.hidden;
   arrow.setAttribute('aria-expanded', String(!menu.hidden));
+  if (!menu.hidden) posicionarMenu();
 });
+addEventListener('resize', () => { if (!menu.hidden) posicionarMenu(); });
 document.addEventListener('click', e => { if (!document.getElementById('split').contains(e.target)) fecharMenu(); });
 menu.addEventListener('click', e => {
   const b = e.target.closest('button[data-act]'); if (!b) return;
