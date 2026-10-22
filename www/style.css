@@ -574,18 +574,25 @@ summary::-webkit-details-marker {
 }
 
 /* Menu que abre acima do botão. */
+
+/* Menu que abre acima do botão. */
 .split-menu {
   position: absolute;
   right: 0;
   bottom: calc(100% + 10px);
   min-width: 240px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 180px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border-radius: 16px;
-  z-index: 30;
+  z-index: 1000;
   border: 1px solid var(--line);
-  box-shadow: 0 12px 32px rgba(30,45,42,.25);
+  box-shadow: 0 12px 32px rgba(30, 45, 42, .25);
   background: var(--card);
 }
+
 
 /* Itens do menu. */
 .split-menu button {
