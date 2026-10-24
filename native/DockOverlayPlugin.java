@@ -31,7 +31,14 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
+
+import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
 
 /**
  * Sobreposição para alinhar a dock sobre a tela inicial real (como o BlurDock).
@@ -122,6 +129,72 @@ public class DockOverlayPlugin extends Plugin {
             } catch (Exception ignored) { }
             call.resolve(r);
         });
+    }
+
+    // ---------- Troca automática de wallpaper: imagens prontas em files/rotation + agendamento pelo WorkManager ----------
+    private File pastaRotacao() {
+        File d = new File(getContext().getFilesDir(), "rotation");
+        if (!d.exists()) d.mkdirs();
+        return d;
+    }
+
+    /** Guarda uma imagem pronta (JPEG em base64) na fila da troca automática. */
+    @PluginMethod
+    public void saveRotationImage(final PluginCall call) {
+        final String data = call.getString("data");
+        final int index = call.getInt("index", 0);
+        if (data == null) { call.reject("sem imagem"); return; }
+        new Thread(() -> {
+            try {
+                byte[] bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT);
+                try (FileOutputStream out = new FileOutputStream(new File(pastaRotacao(), String.format(Locale.US, "%02d.jpg", index)))) {
+                    out.write(bytes);
+                }
+                call.resolve();
+            } catch (Exception ex) {
+                call.reject(String.valueOf(ex.getMessage()));
+            }
+        }).start();
+    }
+
+    /** Apaga as imagens da fila e volta ao começo. */
+    @PluginMethod
+    public void clearRotation(PluginCall call) {
+        File[] arquivos = pastaRotacao().listFiles();
+        if (arquivos != null) for (File f : arquivos) f.delete();
+        getContext().getSharedPreferences(WallpaperRotationWorker.PREFS, Context.MODE_PRIVATE).edit().putInt("next", 0).apply();
+        call.resolve();
+    }
+
+    /** Liga (ou atualiza) a troca a cada "hours" horas, aplicando em "target": home, lock ou both. */
+    @PluginMethod
+    public void scheduleRotation(PluginCall call) {
+        int hours = call.getInt("hours", 24);
+        String target = call.getString("target", "home");
+        Context ctx = getContext().getApplicationContext();
+        ctx.getSharedPreferences(WallpaperRotationWorker.PREFS, Context.MODE_PRIVATE).edit().putString("target", target).apply();
+        PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(WallpaperRotationWorker.class, hours, TimeUnit.HOURS).build();
+        WorkManager.getInstance(ctx).enqueueUniquePeriodicWork("dock_rotation", ExistingPeriodicWorkPolicy.UPDATE, req);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void cancelRotation(PluginCall call) {
+        WorkManager.getInstance(getContext().getApplicationContext()).cancelUniqueWork("dock_rotation");
+        call.resolve();
+    }
+
+    /** Aplica agora a próxima imagem da fila. */
+    @PluginMethod
+    public void rotateNow(final PluginCall call) {
+        final String target = call.getString("target", "home");
+        final Context ctx = getContext().getApplicationContext();
+        new Thread(() -> {
+            ctx.getSharedPreferences(WallpaperRotationWorker.PREFS, Context.MODE_PRIVATE).edit().putString("target", target).apply();
+            JSObject r = new JSObject();
+            r.put("applied", WallpaperRotationWorker.aplicarProxima(ctx));
+            call.resolve(r);
+        }).start();
     }
 
     /** Paleta dinâmica do sistema (Material You, Android 12+): devolve a1, a2, n1, n2 com os tons em hexadecimal. */
