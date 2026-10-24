@@ -1034,6 +1034,12 @@ summary::-webkit-details-marker {
   border-top: 1px solid var(--line);
 }
 
+/* Botões desligados (ex.: “Trocar agora” antes de ligar a troca automática). */
+.rowbtn:disabled,
+.tonal:disabled {
+  opacity: .45;
+}
+
 @media (prefers-reduced-motion:reduce) {
   /* Quem prefere menos movimento (configuração do sistema) fica sem as animações. */
     .view,
@@ -1096,6 +1102,13 @@ summary::-webkit-details-marker {
 .dlg-box b {
   font-size: 17px;
   margin: 2px 2px 6px;
+}
+
+/* Texto de apoio da caixa (progresso da troca automática). */
+.dlg-box small {
+  color: var(--mute);
+  font-size: 13px;
+  margin: 0 2px;
 }
 
 /* Opções da caixa. */

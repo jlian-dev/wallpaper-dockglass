@@ -136,6 +136,15 @@
       <div class="srow"><div><b>Qualidade da prévia</b><small>Rápida economiza bateria</small></div>
         <div class="seg" id="sQual"><button type="button" data-v="0.6">Rápida</button><button type="button" data-v="1">Normal</button><button type="button" data-v="1.6">Nítida</button></div></div>
     </div>
+    <div class="card" id="cardTroca" hidden>
+      <div class="srow"><div><b>Troca automática</b><small>Troca o wallpaper sozinho, com o app fechado</small></div><input type="checkbox" id="tAtiva" aria-label="Ativar a troca automática"></div>
+      <div class="srow"><div><b>Intervalo</b></div>
+        <div class="seg" id="tHoras"><button type="button" data-v="6">6 h</button><button type="button" data-v="12">12 h</button><button type="button" data-v="24">24 h</button><button type="button" data-v="48">48 h</button></div></div>
+      <div class="srow"><div><b>Aplicar em</b></div>
+        <div class="seg" id="tAlvo"><button type="button" data-v="home">Início</button><button type="button" data-v="lock">Bloqueio</button><button type="button" data-v="both">Ambas</button></div></div>
+      <div class="srow"><div><b id="tInfo">Nenhuma imagem pronta</b><small id="tInfo2"></small></div><button class="tonal sm" id="tAtualizar" type="button">Atualizar</button></div>
+      <button class="rowbtn" id="tAgora" type="button">Trocar agora</button>
+    </div>
     <div class="card">
       <div class="srow"><div><b>Histórico de wallpapers</b><small id="sHistN">0 imagens</small></div><button class="tonal sm" id="sHistClear" type="button">Limpar</button></div>
       <button class="rowbtn" id="sRestore" type="button">Restaurar configurações padrão</button>
@@ -150,6 +159,8 @@
     <button type="button" data-alvo="lock">Tela de bloqueio</button>
     <button type="button" data-alvo="both">Ambas</button>
     <button type="button" data-alvo="" class="ghost">Cancelar</button></div></div>
+<div class="dlg" id="progDlg" hidden role="alertdialog" aria-modal="true" aria-label="Gerando imagens">
+  <div class="dlg-box"><b id="progT">Gerando imagens…</b><small id="progS"></small><small>Não feche o app até terminar.</small></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="gFile" accept="image/*" multiple hidden>
 

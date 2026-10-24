@@ -768,7 +768,7 @@ const APP_VERSION = '1.1.0';
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
 /* Preferências guardadas no aparelho */
-const PREF_PADRAO = { tema: 'auto', cores: 'sistema', editorInicio: false, qualidade: 1 };
+const PREF_PADRAO = { tema: 'auto', cores: 'sistema', editorInicio: false, qualidade: 1, trocaAtiva: false, trocaHoras: 24, trocaAlvo: 'home', trocaGerado: null };
 var PREF = { ...PREF_PADRAO };                      // var: applyTheme() pode ser chamada antes desta linha
 try { Object.assign(PREF, JSON.parse(localStorage.getItem('dockPrefs') || '{}')); } catch (e) {}
 const salvarPrefs = () => { try { localStorage.setItem('dockPrefs', JSON.stringify(PREF)); } catch (e) {} };
@@ -902,6 +902,7 @@ function desenharConfig(){
   $('sHistN').textContent = gal.length + (gal.length === 1 ? ' imagem' : ' imagens');
   $('sHistClear').disabled = !gal.length;
   $('sVer').textContent = APP_VERSION;
+  desenharTroca();
 }
 const VISTAS = { home: ['v-home', desenharHome], gallery: ['v-gallery', desenharGaleria], settings: ['v-settings', desenharConfig] };
 let vista = 'home';
@@ -957,7 +958,9 @@ $('sHistClear').addEventListener('click', async () => {
 });
 $('sRestore').addEventListener('click', () => {
   if (!confirm('Restaurar todas as configurações para o padrão? O histórico de wallpapers não é apagado.')) return;
+  const tinhaTroca = PREF.trocaAtiva || PREF.trocaGerado;
   Object.assign(PREF, PREF_PADRAO); salvarPrefs();
+  if (tinhaTroca && trocaOk()) desligarTroca().catch(() => {});      // a troca automática também volta ao padrão (desligada)
   $('btnReset').click();                             // reaproveita a restauração que já existia (Dock, vidro, tamanho)
   applyTheme(); desenharConfig(); toast('Configurações restauradas.');
 });
@@ -981,6 +984,97 @@ function escolherAlvo(){                             // caixa "Aplicar em": devo
   });
 }
 if (DO && !localStorage.getItem('dockSettings')) $('outMode').value = 'device';   // primeira vez no APK: o PNG sai na resolução da tela do aparelho
+
+/* ---------- Troca automática de wallpaper (só no APK) ----------
+   O vidro da Dock é desenhado aqui, em JavaScript, que não roda com o app fechado. Por isso o app GERA as imagens prontas
+   (cada wallpaper do histórico + a Dock atual, em tamanho real) e entrega ao Android, que troca sozinho a cada N horas
+   com o WorkManager (agendador do sistema: funciona com o app fechado e depois de reiniciar o celular). */
+const trocaOk = () => !!(DO && DO.scheduleRotation);
+const hashTroca = () => JSON.stringify([OUT.w, OUT.h, SCALED.map(k => state[k]), ['ior', 'scale', 'chroma', 'shine', 'angle', 'profile'].map(k => state[k]),
+                                         gal.slice(0, LIMITE).map(g => [g.id, FR[g.id] || null])]);   // tudo o que muda o resultado das imagens
+const trocaDesatualizada = () => !PREF.trocaGerado || PREF.trocaGerado.hash !== hashTroca();
+const paraBase64 = blob => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(blob); });
+const mostrarProgresso = (sub) => { $('progS').textContent = sub; $('progDlg').hidden = false; };
+const esconderProgresso = () => { $('progDlg').hidden = true; };
+
+/* Desenha UM wallpaper do histórico com a Dock atual, em tamanho real (JPEG), sem mexer no que está aberto no editor. */
+async function renderizarItem(rec){
+  const bmp = await createImageBitmap(rec.blob);
+  const salvo = { wall, zoom: state.zoom, panX: state.panX, panY: state.panY };
+  try {
+    wall = bmp; wallId++;                                          // wallId invalida o cache do fundo e do vidro
+    const fr = FR[rec.id] || { zoom: 100, panX: 0, panY: 0 };     // cada wallpaper usa o enquadramento guardado dele
+    state.zoom = fr.zoom; state.panX = fr.panX; state.panY = fr.panY;
+    draw(true);
+    return await new Promise(ok => cv.toBlob(ok, 'image/jpeg', .95));
+  } finally {                                                      // devolve o editor ao estado anterior
+    wall = salvo.wall; wallId++; state.zoom = salvo.zoom; state.panX = salvo.panX; state.panY = salvo.panY;
+    draw(); if (bmp.close) bmp.close();
+  }
+}
+async function gerarRotacao(){
+  const itens = gal.slice(0, LIMITE);
+  if (!itens.length) throw new Error('Adicione wallpapers à galeria primeiro.');
+  let feitas = 0;
+  mostrarProgresso('0 de ' + itens.length);
+  try {
+    await DO.clearRotation();
+    for (let i = 0; i < itens.length; i++){
+      $('progS').textContent = (i + 1) + ' de ' + itens.length;
+      try { await DO.saveRotationImage({ index: feitas, data: await paraBase64(await renderizarItem(itens[i])) }); feitas++; }
+      catch (e) { /* imagem ilegível: pula */ }
+    }
+  } finally { esconderProgresso(); }
+  if (!feitas) throw new Error('Nenhuma imagem pôde ser gerada.');
+  PREF.trocaGerado = { n: feitas, em: Date.now(), hash: hashTroca() }; salvarPrefs();
+}
+async function desligarTroca(){
+  await DO.cancelRotation(); await DO.clearRotation();             // cancela o agendamento e libera o espaço das imagens
+  PREF.trocaAtiva = false; PREF.trocaGerado = null; salvarPrefs();
+}
+const reagendar = () => DO.scheduleRotation({ hours: PREF.trocaHoras, target: PREF.trocaAlvo });
+
+function desenharTroca(){
+  $('cardTroca').hidden = !trocaOk();                              // só existe no APK
+  if (!trocaOk()) return;
+  const g = PREF.trocaGerado;
+  $('tAtiva').checked = PREF.trocaAtiva;
+  marcarSeg('tHoras', String(PREF.trocaHoras)); marcarSeg('tAlvo', PREF.trocaAlvo);
+  $('tInfo').textContent = g ? g.n + (g.n === 1 ? ' imagem pronta' : ' imagens prontas') : 'Nenhuma imagem pronta';
+  $('tInfo2').textContent = !g ? 'São geradas com a sua Dock atual.'
+    : trocaDesatualizada() ? 'A Dock ou a galeria mudou: toque em Atualizar.'
+    : 'Atualizadas em ' + new Date(g.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  $('tAgora').disabled = !PREF.trocaAtiva || !g;
+}
+$('tAtiva').addEventListener('change', async e => {
+  const quer = e.target.checked;
+  try {
+    if (quer){
+      if (trocaDesatualizada()) await gerarRotacao();             // gera as imagens na primeira vez (ou se algo mudou)
+      await reagendar(); PREF.trocaAtiva = true; salvarPrefs();
+      toast('Troca automática ligada: a cada ' + PREF.trocaHoras + ' h.');
+    } else { await desligarTroca(); toast('Troca automática desligada.'); }
+  } catch (err) { e.target.checked = PREF.trocaAtiva; toast(err.message || 'Não foi possível alterar a troca automática.'); }
+  desenharConfig();
+});
+$('tHoras').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  PREF.trocaHoras = +b.dataset.v; salvarPrefs(); marcarSeg('tHoras', b.dataset.v);
+  if (PREF.trocaAtiva) await reagendar().catch(() => toast('Não foi possível reagendar.'));
+});
+$('tAlvo').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  PREF.trocaAlvo = b.dataset.v; salvarPrefs(); marcarSeg('tAlvo', b.dataset.v);
+  if (PREF.trocaAtiva) await reagendar().catch(() => toast('Não foi possível reagendar.'));
+});
+$('tAtualizar').addEventListener('click', async () => {
+  try { await gerarRotacao(); toast('Imagens atualizadas.'); } catch (err) { toast(err.message || 'Não foi possível atualizar.'); }
+  desenharConfig();
+});
+$('tAgora').addEventListener('click', async () => {
+  try { const r = await DO.rotateNow({ target: PREF.trocaAlvo }); toast(r && r.applied ? 'Wallpaper trocado.' : 'Não há imagens prontas.'); }
+  catch (err) { toast('Não foi possível trocar agora.'); }
+});
 
 /* Arranque */
 setWall(wall);
