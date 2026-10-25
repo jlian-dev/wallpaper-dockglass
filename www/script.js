@@ -768,7 +768,7 @@ const APP_VERSION = '1.1.0';
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
 /* Preferências guardadas no aparelho */
-const PREF_PADRAO = { tema: 'auto', cores: 'sistema', editorInicio: false, qualidade: 1, trocaAtiva: false, trocaHoras: 24, trocaAlvo: 'home', trocaGerado: null };
+const PREF_PADRAO = { tema: 'auto', cores: 'sistema', editorInicio: false, qualidade: 1, trocaAtiva: false, trocaHoras: 24, trocaAlvo: 'home', trocaGerado: null, dockIndividual: true };
 var PREF = { ...PREF_PADRAO };                      // var: applyTheme() pode ser chamada antes desta linha
 try { Object.assign(PREF, JSON.parse(localStorage.getItem('dockPrefs') || '{}')); } catch (e) {}
 const salvarPrefs = () => { try { localStorage.setItem('dockPrefs', JSON.stringify(PREF)); } catch (e) {} };
@@ -802,6 +802,22 @@ const LIMITE = 20;                                  // máximo de imagens no his
 let gal = [], curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
 try { FR = JSON.parse(localStorage.getItem('dockFrames') || '{}'); } catch (e) {}
 const salvarFR = () => { try { localStorage.setItem('dockFrames', JSON.stringify(FR)); } catch (e) {} };
+
+/* Dock individual: cada wallpaper guarda a PRÓPRIA Dock (posição, tamanho e vidro), como o enquadramento.
+   Os valores ficam como fração do tamanho da imagem de saída, então continuam certos se esse tamanho mudar. */
+let DK = {};                                                       // DK[id] = Dock guardada de cada wallpaper
+try { DK = JSON.parse(localStorage.getItem('dockDocks') || '{}'); } catch (e) {}
+const salvarDK = () => { try { localStorage.setItem('dockDocks', JSON.stringify(DK)); } catch (e) {} };
+const DOCK_LARG = ['x', 'w', 'r', 'bevel', 'thick', 'blur', 'wpBlur'], DOCK_ALT = ['y', 'h'], DOCK_PURO = ['ior', 'scale', 'chroma', 'shine', 'angle', 'profile'];
+const CAMPOS_DOCK = [...DOCK_LARG, ...DOCK_ALT, ...DOCK_PURO];
+const dockAtual = () => {                                         // Dock aberta agora -> frações (medidas em px viram % da largura/altura)
+  const d = {}; DOCK_LARG.forEach(k => d[k] = state[k] / OUT.w); DOCK_ALT.forEach(k => d[k] = state[k] / OUT.h); DOCK_PURO.forEach(k => d[k] = state[k]); return d;
+};
+const aplicarDock = d => {                                        // frações guardadas -> px no tamanho de saída atual
+  DOCK_LARG.forEach(k => { if (d[k] != null) state[k] = Math.round(d[k] * OUT.w); });
+  DOCK_ALT.forEach(k => { if (d[k] != null) state[k] = Math.round(d[k] * OUT.h); });
+  DOCK_PURO.forEach(k => { if (d[k] != null) state[k] = d[k]; });
+};
 async function carregarGaleria(){
   try { gal = (await DB.all()).sort((a, b) => b.added - a.added); }
   catch (e) { gal = []; toast('Não foi possível ler o histórico.'); }
@@ -834,15 +850,19 @@ async function adicionar(arquivos){
       ultimo = id;
     } catch (e) { falhas++; }
   }
-  for (const extra of gal.slice(LIMITE)) if (extra.id !== curId){ await DB.del(extra.id).catch(() => {}); delete FR[extra.id]; }   // mantém só os 20 mais recentes
-  salvarFR(); await carregarGaleria();
+  for (const extra of gal.slice(LIMITE)) if (extra.id !== curId){ await DB.del(extra.id).catch(() => {}); delete FR[extra.id]; delete DK[extra.id]; }   // mantém só os 20 mais recentes
+  salvarFR(); salvarDK(); await carregarGaleria();
   const aviso = falhas ? (falhas === arquivos.length ? 'Não foi possível ler essa imagem.' : falhas + ' imagem(ns) não puderam ser lidas.') : '';
   const trocou = ultimo ? await selecionar(ultimo) : false;       // um único aviso: o de seleção e o de falha não se apagam
   if (trocou || aviso) toast([trocou ? 'Wallpaper selecionado.' : '', aviso].filter(Boolean).join(' '));
   redesenharTelas();
 }
 
-function guardarEnquadramento(){ if (curId){ FR[curId] = { zoom: state.zoom, panX: state.panX, panY: state.panY }; salvarFR(); } }
+function guardarEnquadramento(){                                  // guarda o enquadramento (e a Dock, se for individual) do wallpaper aberto
+  if (!curId) return;
+  FR[curId] = { zoom: state.zoom, panX: state.panX, panY: state.panY }; salvarFR();
+  if (PREF.dockIndividual && OUT.w){ DK[curId] = dockAtual(); salvarDK(); }
+}
 async function selecionar(id){
   guardarEnquadramento();                            // salva o enquadramento do wallpaper que está saindo
   const rec = gal.find(g => g.id === id);
@@ -852,20 +872,23 @@ async function selecionar(id){
     setWall(bmp);                                    // troca o fundo (e o tema, se as cores vierem do wallpaper)
     const fr = FR[id] || { zoom: 100, panX: 0, panY: 0 };
     state.zoom = fr.zoom; state.panX = fr.panX; state.panY = fr.panY;   // enquadramento guardado desse wallpaper
+    if (PREF.dockIndividual){                        // Dock individual: usa a Dock guardada desse wallpaper (ou começa com a que está aberta)
+      if (DK[id]) aplicarDock(DK[id]); else { DK[id] = dockAtual(); salvarDK(); }
+    }
     curId = id; hasWall = true;
     try { localStorage.setItem('dockCurrent', id); } catch (e) {}
     $('nWall').textContent = rec.name; setThumb('tWall', rec.blob);
     syncInputs(); schedule();
     return true;
   } catch (e) {                                      // arquivo indisponível ou corrompido
-    await DB.del(id).catch(() => {}); delete FR[id]; salvarFR(); await carregarGaleria();
+    await DB.del(id).catch(() => {}); delete FR[id]; delete DK[id]; salvarFR(); salvarDK(); await carregarGaleria();
     toast('Imagem indisponível. Removida do histórico.'); redesenharTelas();
     return false;
   }
 }
 async function remover(id){
   try { await DB.del(id); } catch (e) {}
-  delete FR[id]; salvarFR();
+  delete FR[id]; delete DK[id]; salvarFR(); salvarDK();
   if (id === curId){ curId = null; try { localStorage.removeItem('dockCurrent'); } catch (e) {} }
   await carregarGaleria(); redesenharTelas(); toast('Removida do histórico.');
 }
@@ -898,6 +921,7 @@ const marcarSeg = (id, v) => [...$(id).children].forEach(b => b.classList.toggle
 function desenharConfig(){
   marcarSeg('sTema', PREF.tema); marcarSeg('sCores', PREF.cores); marcarSeg('sQual', String(PREF.qualidade));
   $('sEditor').checked = PREF.editorInicio;
+  $('sIndiv').checked = PREF.dockIndividual;
   $('rowCores').hidden = !SYS;                       // a paleta do sistema só existe no APK (Android 12+)
   $('sHistN').textContent = gal.length + (gal.length === 1 ? ' imagem' : ' imagens');
   $('sHistClear').disabled = !gal.length;
@@ -950,16 +974,21 @@ $('sTema').addEventListener('click', e => { const b = e.target.closest('button')
 $('sCores').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.cores = b.dataset.v; salvarPrefs(); applyTheme(); marcarSeg('sCores', PREF.cores); } });
 $('sQual').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.qualidade = +b.dataset.v; salvarPrefs(); marcarSeg('sQual', b.dataset.v); schedule(); } });
 $('sEditor').addEventListener('change', e => { PREF.editorInicio = e.target.checked; salvarPrefs(); });
+$('sIndiv').addEventListener('change', e => {
+  PREF.dockIndividual = e.target.checked; salvarPrefs();
+  if (PREF.dockIndividual && curId){ DK[curId] = dockAtual(); salvarDK(); }   // ao ligar, o wallpaper aberto guarda a Dock que está aberta
+  toast(PREF.dockIndividual ? 'Cada wallpaper guarda a própria Dock.' : 'Todos os wallpapers usam a mesma Dock.');
+});
 $('sHistClear').addEventListener('click', async () => {
   if (!gal.length || !confirm('Apagar todo o histórico de wallpapers? A imagem aberta no editor continua lá.')) return;
   try { await DB.clear(); } catch (e) {}
-  FR = {}; salvarFR(); curId = null; try { localStorage.removeItem('dockCurrent'); } catch (e) {}
+  FR = {}; DK = {}; salvarFR(); salvarDK(); curId = null; try { localStorage.removeItem('dockCurrent'); } catch (e) {}
   await carregarGaleria(); desenharConfig(); toast('Histórico apagado.');
 });
 $('sRestore').addEventListener('click', () => {
   if (!confirm('Restaurar todas as configurações para o padrão? O histórico de wallpapers não é apagado.')) return;
   const tinhaTroca = PREF.trocaAtiva || PREF.trocaGerado;
-  Object.assign(PREF, PREF_PADRAO); salvarPrefs();
+  Object.assign(PREF, PREF_PADRAO); salvarPrefs(); DK = {}; salvarDK();     // cada wallpaper volta a começar com a Dock padrão
   if (tinhaTroca && trocaOk()) desligarTroca().catch(() => {});      // a troca automática também volta ao padrão (desligada)
   $('btnReset').click();                             // reaproveita a restauração que já existia (Dock, vidro, tamanho)
   applyTheme(); desenharConfig(); toast('Configurações restauradas.');
@@ -991,7 +1020,7 @@ if (DO && !localStorage.getItem('dockSettings')) $('outMode').value = 'device'; 
    com o WorkManager (agendador do sistema: funciona com o app fechado e depois de reiniciar o celular). */
 const trocaOk = () => !!(DO && DO.scheduleRotation);
 const hashTroca = () => JSON.stringify([OUT.w, OUT.h, SCALED.map(k => state[k]), ['ior', 'scale', 'chroma', 'shine', 'angle', 'profile'].map(k => state[k]),
-                                         gal.slice(0, LIMITE).map(g => [g.id, FR[g.id] || null])]);   // tudo o que muda o resultado das imagens
+                                         gal.slice(0, LIMITE).map(g => [g.id, FR[g.id] || null]), PREF.dockIndividual, gal.slice(0, LIMITE).map(g => DK[g.id] || null)]);   // tudo o que muda o resultado das imagens
 const trocaDesatualizada = () => !PREF.trocaGerado || PREF.trocaGerado.hash !== hashTroca();
 const paraBase64 = blob => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(blob); });
 const mostrarProgresso = (sub) => { $('progS').textContent = sub; $('progDlg').hidden = false; };
@@ -1000,15 +1029,17 @@ const esconderProgresso = () => { $('progDlg').hidden = true; };
 /* Desenha UM wallpaper do histórico com a Dock atual, em tamanho real (JPEG), sem mexer no que está aberto no editor. */
 async function renderizarItem(rec){
   const bmp = await createImageBitmap(rec.blob);
-  const salvo = { wall, zoom: state.zoom, panX: state.panX, panY: state.panY };
+  const salvo = { wall, zoom: state.zoom, panX: state.panX, panY: state.panY, dock: Object.fromEntries(CAMPOS_DOCK.map(k => [k, state[k]])) };
   try {
     wall = bmp; wallId++;                                          // wallId invalida o cache do fundo e do vidro
     const fr = FR[rec.id] || { zoom: 100, panX: 0, panY: 0 };     // cada wallpaper usa o enquadramento guardado dele
     state.zoom = fr.zoom; state.panX = fr.panX; state.panY = fr.panY;
+    if (PREF.dockIndividual && DK[rec.id]) aplicarDock(DK[rec.id]);   // e a Dock guardada dele
     draw(true);
     return await new Promise(ok => cv.toBlob(ok, 'image/jpeg', .95));
   } finally {                                                      // devolve o editor ao estado anterior
     wall = salvo.wall; wallId++; state.zoom = salvo.zoom; state.panX = salvo.panX; state.panY = salvo.panY;
+    CAMPOS_DOCK.forEach(k => state[k] = salvo.dock[k]);
     draw(); if (bmp.close) bmp.close();
   }
 }
@@ -1035,6 +1066,7 @@ async function desligarTroca(){
 const reagendar = () => DO.scheduleRotation({ hours: PREF.trocaHoras, target: PREF.trocaAlvo });
 
 function desenharTroca(){
+  guardarEnquadramento();                                          // garante que o enquadramento e a Dock mais recentes entrem na conta
   $('cardTroca').hidden = !trocaOk();                              // só existe no APK
   if (!trocaOk()) return;
   const g = PREF.trocaGerado;
