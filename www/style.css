@@ -293,6 +293,28 @@ input[type=checkbox]:checked::after {
   padding: 6px;
 }
 
+/* Estilos do vidro: fileira de atalhos (quebra de linha para todos ficarem visíveis). */
+.estilos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0 12px;
+}
+.estilos button {
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--sc);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.estilos button.on {
+  background: var(--acc);
+  color: var(--acc-fg);
+}
+
 /* ================= 3. Editor: prévia (área escura no topo) ================= */
 
 /* Editor: no computador, prévia e painel lado a lado. */

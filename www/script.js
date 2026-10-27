@@ -256,6 +256,12 @@ function roundRectPath(x,y,w,h,r){
   ctx.beginPath(); ctx.roundRect(x,y,w,h,r);
 }
 
+/* Cache da FORMA do vidro. Para cada pixel da Dock guarda a transparência (A), a direção da borda (NX, NY),
+   o desvio da refração (DISP) e o brilho da borda (HL0). Isso só depende do formato (tamanho, curvatura, bisel,
+   espessura, índice, escala, perfil, ângulo da luz) e não da posição nem do fundo; por isso arrastar a Dock só
+   refaz a leitura do fundo e a mistura de cores, que é bem mais rápido. */
+const FIELD = { key: '', W: 0, H: 0, A: null, NX: null, NY: null, DISP: null, HL0: null, img: null, cvs: null };
+
 function drawDock(){
   const w = state.w, h = state.h;
   const r = Math.min(state.r, w/2, h/2);        // o raio nunca passa de metade do lado menor
@@ -272,83 +278,94 @@ function drawDock(){
   ctx.fill();
   ctx.restore();
 
-  // --- Região de trabalho = dock + margem (para o desfoque e a refração) ---
-  const bevel = Math.min(state.bevel, h/2);                          // bisel não passa de metade da altura
-  const table = buildTable(state.profile, bevel, state.thick, state.ior); // tabela de refração
-  const maxD = Math.max(...table.map(Math.abs)) * state.scale/100;   // maior desvio possível (px)
-  const M = Math.ceil(state.blur*2 + maxD) + 4;
-  const bx = left - M, by = top - M, bw = w + 2*M, bh = h + 2*M;
-
   // --- Passo A: o fundo desfocado já está pronto em GD (cache); não se desfoca a cada quadro ---
-  
-  
-   
-     
-     
-
-  // --- Passo B: calcular cada pixel do vidro ---
-  const out = new ImageData(bw,bh), od = out.data;      // imagem de saída (vazia)
-  const cx = bw/2, cy = bh/2;                           // centro da dock na região
-  const hx = w/2 - r, hy = h/2 - r;                     // "miolo" reto do retângulo
-  const bev = Math.min(state.bevel, h/2);               // bisel não pode passar da metade da altura
-  const shine = state.shine/100;
-  const ang = state.angle*Math.PI/180, LX = Math.cos(ang), LY = Math.sin(ang); // direção da luz
-  const rimW = Math.max(1.5, 2.5*cv.width/1179);        // espessura do fio de luz, proporcional à imagem
-
-  for (let py=0; py<bh; py++){
-    for (let px=0; px<bw; px++){
-      // Distância assinada à borda (SDF): negativa = dentro, positiva = fora
-      const dx = px+0.5-cx, dy = py+0.5-cy;
-      const qx = Math.abs(dx)-hx, qy = Math.abs(dy)-hy;
-      const ox = Math.max(qx,0), oy = Math.max(qy,0);
-      const len = Math.sqrt(ox*ox + oy*oy);
-      const dist = len + Math.min(Math.max(qx,qy),0) - r;
-      if (dist > 0.5) continue;                         // fora da dock: não pinta
-
-      // Normal externa: direção para onde a borda "aponta" neste pixel
-      let nx, ny;
-      if (len > 0){ nx = ox/len*Math.sign(dx); ny = oy/len*Math.sign(dy); } // cantos
-      else if (qx > qy){ nx = Math.sign(dx); ny = 0; }                      // laterais
-      else { nx = 0; ny = Math.sign(dy); }                                  // topo/base
-
-      const depth = Math.max(0, -dist);   // nunca negativo: pixels até meio pixel fora da forma gravavam NaN (preto) na tabela de refração e formavam os pontos escuros nos cantos
-      //                              // distância da borda para dentro
-      const idx = Math.min(127, Math.floor(depth/bevel*127)); // posição na tabela (0 = borda, 127 = fim do bisel)
-      const disp = depth < bevel ? table[idx]*state.scale/100 : 0;                     // desvio em px (0 no miolo plano do vidro)
-
-      // Refração com aberração cromática: R, G e B amostram posições levemente diferentes
-      const i = (py*bw+px)*4;
-      const col = COL;
-      for (let c=0; c<3; c++){
-        const k = disp*(1 + (c-1)*state.chroma/100);                // R desvia menos, B mais (aberração cromática)
-        const sx = Math.min(GW-1, Math.max(0, bx + Math.round(px - nx*k)));   // bx/by convertem para coordenadas do canvas inteiro
-        const sy = Math.min(cv.height-1, Math.max(0, by + Math.round(py - ny*k)));
-        col[c] = GD[(sy*GW+sx)*4 + c];
+  // --- Passo B: forma do vidro (cache). Só é recalculada quando o formato muda ---
+  const bevel = Math.min(state.bevel, h/2);                              // bisel não passa de metade da altura
+  const rimW = Math.max(1.5, 2.5*cv.width/1179);                         // espessura do fio de luz, proporcional à imagem
+  const F = FIELD, W = Math.max(1, Math.ceil(w)), H = Math.max(1, Math.ceil(h));   // só a área da Dock: fora dela o alfa é sempre 0
+  const key = [w, h, r, bevel, state.thick, state.ior, state.scale, state.profile, state.angle, rimW].join('|');
+  if (F.key !== key || F.W !== W || F.H !== H){
+    const table = buildTable(state.profile, bevel, state.thick, state.ior);   // tabela de refração
+    const n = W*H;
+    if (F.W !== W || F.H !== H || !F.A){
+      F.A = new Uint8ClampedArray(n); F.NX = new Float64Array(n); F.NY = new Float64Array(n); F.DISP = new Float64Array(n); F.HL0 = new Float64Array(n);
+      F.cvs = document.createElement('canvas'); F.cvs.width = W; F.cvs.height = H;
+    }
+    F.img = new ImageData(W, H);                                         // vazia: pixels fora da forma ficam transparentes
+    const cx = w/2, cy = h/2;                                            // centro da dock
+    const hx = w/2 - r, hy = h/2 - r;                                    // "miolo" reto do retângulo
+    const ang = state.angle*Math.PI/180, LX = Math.cos(ang), LY = Math.sin(ang);   // direção da luz
+    for (let py = 0; py < H; py++){
+      for (let px = 0; px < W; px++){
+        const k = py*W + px;
+        // Distância assinada à borda (SDF): negativa = dentro, positiva = fora
+        const dx = px+0.5-cx, dy = py+0.5-cy;
+        const qx = Math.abs(dx)-hx, qy = Math.abs(dy)-hy;
+        const ox = Math.max(qx,0), oy = Math.max(qy,0);
+        const len = Math.sqrt(ox*ox + oy*oy);
+        const dist = len + Math.min(Math.max(qx,qy),0) - r;
+        if (dist > 0.5){ F.A[k] = 0; F.DISP[k] = 0; F.HL0[k] = 0; continue; }   // fora da dock: não pinta
+        // Normal externa: direção para onde a borda "aponta" neste pixel
+        let nx, ny;
+        if (len > 0){ nx = ox/len*Math.sign(dx); ny = oy/len*Math.sign(dy); } // cantos
+        else if (qx > qy){ nx = Math.sign(dx); ny = 0; }                      // laterais
+        else { nx = 0; ny = Math.sign(dy); }                                  // topo/base
+        const depth = Math.max(0, -dist);                                     // distância da borda para dentro (nunca negativa: evitava NaN nos cantos)
+        const idx = Math.min(127, Math.floor(depth/bevel*127));               // posição na tabela (0 = borda, 127 = fim do bisel)
+        F.NX[k] = nx; F.NY[k] = ny;
+        F.DISP[k] = depth < bevel ? table[idx]*state.scale/100 : 0;           // desvio em px (0 no miolo plano do vidro)
+        // Brilho da borda: fio de luz fino, mais forte do lado virado para a luz
+        const dot = nx*LX + ny*LY;                                            // 1 = borda virada para a luz, -1 = lado oposto
+        const rim = depth < rimW ? 1 - depth/rimW : 0;
+        F.HL0[k] = rim * (0.2 + 0.8*Math.abs(dot)) * (dot > 0 ? 1 : 0.6);
+        F.A[k] = Math.min(1, Math.max(0, 0.5 - dist))*255;                    // alfa: suaviza a serrilha da borda
       }
+    }
+    F.key = key; F.W = W; F.H = H;
+  }
 
-      // Película branca translúcida, mais forte no topo (como vidro fosco)
-      const tint = 0.08 + 0.10*(1 - Math.min(1,Math.max(0,(py-M)/h)));
-
-      // Brilho especular: luz vinda do canto superior esquerdo
-      const dot = nx*LX + ny*LY;    // 1 = borda virada para a luz, -1 = lado oposto
-      const rim = depth < rimW ? 1 - depth/rimW : 0;      // fio de luz fino colado na borda
-      const lum = 0.3*col[0] + 0.59*col[1] + 0.11*col[2];            // luminosidade do pixel (base para saturar o reflexo)
-      const hl = rim * (0.2 + 0.8*Math.abs(dot)) * (dot > 0 ? 1 : 0.6) * shine;
-
-      for (let c=0; c<3; c++){
-        let v = col[c]*(1-tint) + 255*tint;             // mistura com branco
-        const sat = Math.min(255, Math.max(0, lum + (col[c]-lum)*2.5)); // cor do pixel com saturação reforçada
-        v = v*(1-hl) + (127.5 + 0.5*sat)*hl;                    // mistura o reflexo (branco + cor saturada)
-        od[i+c] = v;
+  // --- Passo C: cor de cada pixel = fundo desfocado (com refração) + película branca + reflexo ---
+  const A = F.A, NX = F.NX, NY = F.NY, DISP = F.DISP, HL0 = F.HL0, od = F.img.data;
+  const shine = state.shine/100, cr = state.chroma/100, GH = cv.height, GW1 = GW - 1, GH1 = GH - 1;
+  for (let py = 0; py < H; py++){
+    const tint = 0.08 + 0.10*(1 - Math.min(1, Math.max(0, py/h)));          // película branca translúcida, mais forte no topo (vidro fosco)
+    const omt = 1 - tint, t255 = 255*tint;
+    const gy = top + py;                                                    // linha correspondente no canvas
+    for (let px = 0; px < W; px++){
+      const k = py*W + px, a = A[k];
+      if (a === 0) continue;
+      const i = k*4, disp = DISP[k];
+      let c0, c1, c2;
+      if (disp === 0){                                                      // miolo plano: os três canais leem o mesmo pixel
+        const sx = Math.min(GW1, Math.max(0, left + px)), sy = Math.min(GH1, Math.max(0, gy)), j = (sy*GW + sx)*4;
+        c0 = GD[j]; c1 = GD[j+1]; c2 = GD[j+2];
+      } else {                                                              // bisel: refração com aberração cromática (R desvia menos, B mais)
+        const nx = NX[k], ny = NY[k];
+        let kk = disp*(1 - cr);
+        let sx = Math.min(GW1, Math.max(0, left + Math.round(px - nx*kk))), sy = Math.min(GH1, Math.max(0, top + Math.round(py - ny*kk)));
+        c0 = GD[(sy*GW + sx)*4];
+        kk = disp;
+        sx = Math.min(GW1, Math.max(0, left + Math.round(px - nx*kk))); sy = Math.min(GH1, Math.max(0, top + Math.round(py - ny*kk)));
+        c1 = GD[(sy*GW + sx)*4 + 1];
+        kk = disp*(1 + cr);
+        sx = Math.min(GW1, Math.max(0, left + Math.round(px - nx*kk))); sy = Math.min(GH1, Math.max(0, top + Math.round(py - ny*kk)));
+        c2 = GD[(sy*GW + sx)*4 + 2];
       }
-      od[i+3] = Math.min(1, Math.max(0, 0.5 - dist))*255; // alfa: suaviza a serrilha da borda
+      let v0 = c0*omt + t255, v1 = c1*omt + t255, v2 = c2*omt + t255;      // mistura com branco
+      const hl = HL0[k]*shine;
+      if (hl !== 0){                                                        // só na borda: soma o reflexo (branco + cor saturada)
+        const lum = 0.3*c0 + 0.59*c1 + 0.11*c2, omh = 1 - hl;
+        v0 = v0*omh + (127.5 + 0.5*Math.min(255, Math.max(0, lum + (c0-lum)*2.5)))*hl;
+        v1 = v1*omh + (127.5 + 0.5*Math.min(255, Math.max(0, lum + (c1-lum)*2.5)))*hl;
+        v2 = v2*omh + (127.5 + 0.5*Math.min(255, Math.max(0, lum + (c2-lum)*2.5)))*hl;
+      }
+      od[i] = v0; od[i+1] = v1; od[i+2] = v2; od[i+3] = a;
     }
   }
 
-  // --- Passo C: colocar o resultado no canvas principal ---
-  const tmp = document.createElement('canvas'); tmp.width = bw; tmp.height = bh;
-  tmp.getContext('2d').putImageData(out,0,0);           // putImageData ignora transparência, por isso o canvas temporário
-  ctx.drawImage(tmp, bx, by);                           // drawImage respeita o alfa
+  // --- Passo D: colocar o resultado no canvas principal ---
+  F.cvs.getContext('2d').putImageData(F.img, 0, 0);     // putImageData ignora transparência, por isso o canvas temporário (reaproveitado)
+  ctx.drawImage(F.cvs, left, top);                      // drawImage respeita o alfa
 }
 
 /* Agenda 1 redesenho por quadro: evita travar quando arrastas um slider */
@@ -451,28 +468,69 @@ panel.addEventListener('pointerdown', e => {
 });
 ['pointerup','pointercancel','pointerleave'].forEach(t => panel.addEventListener(t, () => clearTimeout(hold)));
 
-/* Arrastar a dock direto na imagem (mouse ou dedo) */
+/* Gestos na prévia (mouse ou dedo): arrastar a DOCK move a Dock; arrastar o RESTO da imagem enquadra o wallpaper;
+   dois dedos (pinça) ou a roda do mouse dão zoom no wallpaper. */
 let drag = null;
 const toCanvas = e => {                                        // converte a posição da tela para pixels do canvas
   const r = cv.getBoundingClientRect();
   const s = Math.min(r.width/OUT.w, r.height/OUT.h);     // escala do object-fit: contain (sobram faixas nas laterais)
   return [(e.clientX - r.left - (r.width - OUT.w*s)/2)/s, (e.clientY - r.top - (r.height - OUT.h*s)/2)/s];   // sempre em pixels do tamanho real
 };
+const dedos = new Map();                                       // ponteiros ativos (id -> posição na tela)
+let gesto = null;                                              // 'dock' | 'pan' | 'zoom' | null
+const entre = (v, a, b) => Math.min(b, Math.max(a, v));
+const folga = () => {                                          // quanto a imagem ampliada sobra além do quadro (px), na horizontal e na vertical
+  const [iw, ih] = sizeOf(wall), s = Math.max(OUT.w/iw, OUT.h/ih) * (state.zoom/100) * (1 + 4*state.wpBlur/Math.min(OUT.w, OUT.h));
+  return [Math.max(0, iw*s - OUT.w), Math.max(0, ih*s - OUT.h)];
+};
+const atualizaEnquadramento = () => {                          // espelha zoom/pan nos sliders (só esses três) e redesenha
+  ['zoom', 'panX', 'panY'].forEach(k => { const el = document.getElementById('s-' + k); if (el){ el.value = state[k]; showVal(el); } });
+  schedule();
+};
 cv.addEventListener('pointerdown', e => {
+  dedos.set(e.pointerId, [e.clientX, e.clientY]); cv.setPointerCapture(e.pointerId);
+  if (dedos.size === 2){                                       // segundo dedo: vira pinça (cancela o arrasto em curso)
+    const [a, b] = [...dedos.values()]; gesto = 'zoom';
+    drag = { d0: Math.hypot(a[0]-b[0], a[1]-b[1]) || 1, zoom0: state.zoom }; return;
+  }
+  if (dedos.size > 2) return;
   const [px, py] = toCanvas(e), left = OUT.w/2 + state.x - state.w/2;
-  if (px < left || px > left + state.w || py < state.y || py > state.y + state.h) return; // só se clicou na dock
-  drag = { px, py, x: state.x, y: state.y };
-  cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing';
+  const naDock = !(px < left || px > left + state.w || py < state.y || py > state.y + state.h);
+  gesto = naDock ? 'dock' : 'pan';                             // tocou na Dock: move a Dock; senão: enquadra o wallpaper
+  drag = { px, py, x: state.x, y: state.y, panX: state.panX, panY: state.panY };
+  cv.style.cursor = 'grabbing';
 });
 cv.addEventListener('pointermove', e => {
-  if (!drag) return;
+  if (!dedos.has(e.pointerId)) return;
+  dedos.set(e.pointerId, [e.clientX, e.clientY]);
+  if (gesto === 'zoom' && dedos.size === 2){                   // pinça: o zoom acompanha a distância entre os dedos
+    const [a, b] = [...dedos.values()];
+    state.zoom = Math.round(entre(drag.zoom0 * Math.hypot(a[0]-b[0], a[1]-b[1]) / drag.d0, 100, 400));
+    atualizaEnquadramento(); return;
+  }
+  if (!drag || dedos.size !== 1) return;
   const [px, py] = toCanvas(e);
-  state.x = Math.round(drag.x + px - drag.px);                // move pelo mesmo tanto que o ponteiro andou
-  state.y = Math.round(drag.y + py - drag.py);
-  document.getElementById('n-x').value = state.x; document.getElementById('n-y').value = state.y;   // atualiza só X e Y (mais leve que syncInputs)
-  schedule();
+  if (gesto === 'dock'){
+    state.x = Math.round(drag.x + px - drag.px);                // move pelo mesmo tanto que o ponteiro andou
+    state.y = Math.round(drag.y + py - drag.py);
+    document.getElementById('n-x').value = state.x; document.getElementById('n-y').value = state.y;   // atualiza só X e Y (mais leve que syncInputs)
+    schedule();
+  } else if (gesto === 'pan'){                                 // a imagem acompanha o dedo; pan vai de -100 a 100 (meia folga para cada lado)
+    const [fx, fy] = folga();
+    if (fx > 0) state.panX = Math.round(entre(drag.panX - (px - drag.px)/(fx/2)*100, -100, 100));
+    if (fy > 0) state.panY = Math.round(entre(drag.panY - (py - drag.py)/(fy/2)*100, -100, 100));
+    atualizaEnquadramento();
+  }
 });
-['pointerup','pointercancel'].forEach(t => cv.addEventListener(t, () => { drag = null; cv.style.cursor = ''; }));
+const soltou = e => {
+  dedos.delete(e.pointerId);
+  if (!dedos.size){ gesto = null; drag = null; cv.style.cursor = ''; }
+  else if (gesto === 'zoom'){ gesto = null; drag = null; }     // sobrou um dedo depois da pinça: espera levantar tudo
+};
+['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, soltou));
+cv.addEventListener('wheel', e => {                            // roda do mouse = zoom (computador)
+  e.preventDefault(); state.zoom = Math.round(entre(state.zoom * (e.deltaY < 0 ? 1.08 : 1/1.08), 100, 400)); atualizaEnquadramento();
+}, { passive: false });
 
 
 /* ---------- Configurações guardadas no aparelho (localStorage) ---------- */
@@ -1107,6 +1165,27 @@ $('tAgora').addEventListener('click', async () => {
   try { const r = await DO.rotateNow({ target: PREF.trocaAlvo }); toast(r && r.applied ? 'Wallpaper trocado.' : 'Não há imagens prontas.'); }
   catch (err) { toast('Não foi possível trocar agora.'); }
 });
+
+/* ---------- Estilos do vidro: atalhos que ajustam vários controles de uma vez ----------
+   Bisel e espessura são frações da altura da Dock e o desfoque é fração da largura da imagem, então valem em qualquer tamanho. */
+const ESTILOS = {
+  cristal: { bisel: .35, espessura: 1.2, blur: .012, ior: 1.5, scale: 100, chroma: 8,  shine: 60, profile: 'squircle' },   // o visual padrão
+  gelo:    { bisel: .42, espessura: 1.5, blur: .006, ior: 1.8, scale: 130, chroma: 14, shine: 90, profile: 'squircle' },   // transparente, com muita refração
+  fosco:   { bisel: .30, espessura: .8,  blur: .030, ior: 1.2, scale: 60,  chroma: 0,  shine: 35, profile: 'squircle' },   // vidro jateado
+  liquido: { bisel: .45, espessura: 1.4, blur: .012, ior: 1.6, scale: 140, chroma: 10, shine: 70, profile: 'lip' },        // borda alta, centro côncavo
+  sutil:   { bisel: .25, espessura: 1.0, blur: .010, ior: 1.2, scale: 50,  chroma: 3,  shine: 25, profile: 'squircle' }    // quase imperceptível
+};
+function aplicarEstilo(nome){
+  const e = ESTILOS[nome]; if (!e) return;
+  state.bevel = Math.round(state.h * e.bisel); state.thick = Math.round(state.bevel * e.espessura); state.blur = Math.round(OUT.w * e.blur);
+  Object.assign(state, { ior: e.ior, scale: e.scale, chroma: e.chroma, shine: e.shine, profile: e.profile });
+  syncInputs(); schedule();
+}
+$('estilos').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  aplicarEstilo(b.dataset.e); [...$('estilos').children].forEach(x => x.classList.toggle('on', x === b));
+});
+$('sliders').addEventListener('input', () => [...$('estilos').children].forEach(x => x.classList.remove('on')));   // mexeu num controle: já não é um estilo "puro"
 
 /* Arranque */
 setWall(wall);

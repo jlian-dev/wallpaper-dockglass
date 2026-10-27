@@ -17,7 +17,7 @@
     <button id="eBack" class="ebtn" type="button" aria-label="Voltar ao início">&larr;</button>
     <div class="pwrap" id="pwrap"><div class="phone" id="phone"><canvas id="cv"></canvas></div></div>
     <div class="info" id="info"></div>
-    <div class="info">Arraste a dock na imagem para movê-la; use −1 / +1 para o ajuste fino.</div>
+    <div class="info">Arraste a Dock para movê-la e o resto da imagem para enquadrar; pinça ou roda do mouse dão zoom. Use −1 / +1 para o ajuste fino.</div>
   </section>
 
   <!-- PAINEL DE CONTROLOS -->
@@ -48,6 +48,9 @@
 
     </details>
     <details open><summary>Efeito de vidro</summary>
+    <div class="estilos" id="estilos" role="group" aria-label="Estilos do vidro">
+      <button type="button" data-e="cristal">Cristal</button><button type="button" data-e="gelo">Gelo</button><button type="button" data-e="fosco">Fosco</button><button type="button" data-e="liquido">Líquido</button><button type="button" data-e="sutil">Sutil</button>
+    </div>
     <label>Formato do bisel
       <select data-k="profile" style="width:100%;margin:6px 0 10px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
         <option value="squircle">Squircle (estilo Apple)</option>
