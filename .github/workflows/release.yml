@@ -36,6 +36,9 @@ jobs:
       - run: node patch-android.js        # plugin nativo, permissões, WorkManager e a versão do app
       - run: npx cap sync android         # copia o app e os plugins
 
+      - name: Gerar ícones do Android
+        run: npx --yes @capacitor/assets generate --android
+
       - name: Compilar
         run: |
           cd android && chmod +x gradlew
