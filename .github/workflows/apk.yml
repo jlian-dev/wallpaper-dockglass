@@ -2,6 +2,7 @@
 name: Gerar APK
 on:
   push:
+    tags-ignore: ['v*']        # as tags de versão são tratadas pelo release.yml
   workflow_dispatch:
 jobs:
   build:
