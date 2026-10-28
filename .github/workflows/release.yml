@@ -39,6 +39,17 @@ jobs:
       - name: Gerar ícones do Android
         run: npx --yes @capacitor/assets generate --android
 
+        
+      - name: Conferir configuração do ícone
+        run: |
+          echo "=== AndroidManifest ==="
+          grep -nE 'android:icon|android:roundIcon' android/app/src/main/AndroidManifest.xml
+          echo "=== Configuração de recursos ==="
+          cat android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          echo "=== Imagem de origem ==="
+          file assets/icon.png
+
+
       - name: Compilar
         run: |
           cd android && chmod +x gradlew
