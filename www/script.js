@@ -856,7 +856,7 @@ const DB = (() => {
            put: rec => tx('readwrite', s => s.put(rec)), del: id => tx('readwrite', s => s.delete(id)), clear: () => tx('readwrite', s => s.clear()) };
 })();
 
-const LIMITE = 20;                                  // máximo de imagens no histórico
+const LIMITE = 100;                                  // máximo de imagens no histórico
 let gal = [], curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
 try { FR = JSON.parse(localStorage.getItem('dockFrames') || '{}'); } catch (e) {}
 const salvarFR = () => { try { localStorage.setItem('dockFrames', JSON.stringify(FR)); } catch (e) {} };
