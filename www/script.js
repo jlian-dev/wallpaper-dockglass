@@ -1070,7 +1070,7 @@ $('gGrid').addEventListener('click', async e => {
   if (await selecionar(item.dataset.id)){ toast('Wallpaper selecionado.'); voltar(); }
 });
 $('gGrid').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('gi')) e.target.click(); });
-$$('rGrid').addEventListener('click', async e => {
+$('rGrid').addEventListener('click', async e => {
   const item = e.target.closest('.gi');
   if (!item) return;
 
