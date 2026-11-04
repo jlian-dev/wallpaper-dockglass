@@ -98,7 +98,7 @@
       <button class="solid big" id="hPick" type="button">Escolher wallpaper</button>
       <button class="tonal big" id="hDock" type="button">Personalizar Dock</button>
     </div>
-    <div class="sec-h"><h3>Recentes</h3><button class="link" type="button" data-go="gallery">Ver galeria</button></div>
+    <div class="sec-h"><h3>Recentes</h3><div><button class="link" type="button" data-go="gallery">Galeria fixa</button><button class="link" type="button" data-go="rotation-gallery">Automática</button></div></div>
     <div class="strip" id="hRecent"></div>
   </div>
 </section>
@@ -115,6 +115,19 @@
   </div>
 </section>
 
+<section class="view" id="v-rotation-gallery" aria-label="Galeria automática">
+  <header class="vh">
+    <button class="ib" type="button" data-back aria-label="Voltar">&larr;</button>
+    <b class="vt">Galeria automática</b>
+    <button class="solid sm" id="rAdd" type="button">+ Adicionar</button>
+  </header>
+  <div class="vbody">
+    <p class="info">Adicione aqui somente os wallpapers que poderão ser usados pela troca automática. Esta coleção é independente da galeria fixa.</p>
+    <div class="grid" id="rGrid"></div>
+    <div class="empty" id="rEmpty" hidden><b>Nenhum wallpaper automático</b><span>Adicione imagens para formar sua coleção de troca automática.</span><button class="solid" id="rAdd2" type="button">Adicionar imagens</button></div>
+  </div>
+</section>
+
 <section class="view" id="v-settings" aria-label="Configurações">
   <header class="vh">
     <button class="ib" type="button" data-back aria-label="Voltar">&larr;</button>
@@ -124,7 +137,8 @@
     <h4>Principal</h4>
     <div class="card list">
       <button type="button" data-go="home">Início</button>
-      <button type="button" data-go="gallery">Galeria</button>
+      <button type="button" data-go="gallery">Galeria fixa</button>
+      <button type="button" data-go="rotation-gallery">Galeria automática</button>
       <button type="button" data-go="editor">Personalizar Dock</button>
     </div>
     <h4>Configurações</h4>
@@ -167,6 +181,7 @@
   <div class="dlg-box"><b id="progT">Gerando imagens…</b><small id="progS"></small><small>Não feche o app até terminar.</small></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="gFile" accept="image/*" multiple hidden>
+<input type="file" id="rFile" accept="image/*" multiple hidden>
 
 <script src="script.js"></script>
 </body>

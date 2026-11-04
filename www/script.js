@@ -841,23 +841,33 @@ function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add(
 const DB = (() => {
   let dbp;
   const abrir = () => dbp || (dbp = new Promise((ok, erro) => {
-    const r = indexedDB.open('dockliquida', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('wallpapers', { keyPath: 'id' });
+    const r = indexedDB.open('dockliquida', 2);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains('wallpapers')) db.createObjectStore('wallpapers', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('rotationWallpapers')) db.createObjectStore('rotationWallpapers', { keyPath: 'id' });
+    };
     r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error);
   }));
-  const tx = async (modo, fn) => {
+  const tx = async (modo, fn, loja = 'wallpapers') => {
     const db = await abrir();
     return new Promise((ok, erro) => {
-      const t = db.transaction('wallpapers', modo), req = fn(t.objectStore('wallpapers'));
+      const t = db.transaction(loja, modo), req = fn(t.objectStore(loja));
       t.oncomplete = () => ok(req && req.result); t.onerror = t.onabort = () => erro(t.error);
     });
   };
-  return { all: () => tx('readonly', s => s.getAll()), get: id => tx('readonly', s => s.get(id)),
-           put: rec => tx('readwrite', s => s.put(rec)), del: id => tx('readwrite', s => s.delete(id)), clear: () => tx('readwrite', s => s.clear()) };
+  return {
+    all: () => tx('readonly', s => s.getAll()), get: id => tx('readonly', s => s.get(id)),
+    put: rec => tx('readwrite', s => s.put(rec)), del: id => tx('readwrite', s => s.delete(id)), clear: () => tx('readwrite', s => s.clear()),
+    allRotation: () => tx('readonly', s => s.getAll(), 'rotationWallpapers'),
+    putRotation: rec => tx('readwrite', s => s.put(rec), 'rotationWallpapers'),
+    delRotation: id => tx('readwrite', s => s.delete(id), 'rotationWallpapers'),
+    clearRotation: () => tx('readwrite', s => s.clear(), 'rotationWallpapers')
+  };
 })();
 
 const LIMITE = 100;                                  // máximo de imagens no histórico
-let gal = [], curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
+let gal = [], galRotacao = [], curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
 try { FR = JSON.parse(localStorage.getItem('dockFrames') || '{}'); } catch (e) {}
 const salvarFR = () => { try { localStorage.setItem('dockFrames', JSON.stringify(FR)); } catch (e) {} };
 
@@ -877,8 +887,10 @@ const aplicarDock = d => {                                        // frações g
   DOCK_PURO.forEach(k => { if (d[k] != null) state[k] = d[k]; });
 };
 async function carregarGaleria(){
-  try { gal = (await DB.all()).sort((a, b) => b.added - a.added); }
-  catch (e) { gal = []; toast('Não foi possível ler o histórico.'); }
+  try {
+    gal = (await DB.all()).sort((a, b) => b.added - a.added);
+    galRotacao = (await DB.allRotation()).sort((a, b) => b.added - a.added);
+  } catch (e) { gal = []; galRotacao = []; toast('Não foi possível ler as galerias.'); }
 }
 
 /* Identificador = hash dos primeiros 256 KB + tamanho: a mesma foto escolhida de novo não duplica */
@@ -914,6 +926,35 @@ async function adicionar(arquivos){
   const trocou = ultimo ? await selecionar(ultimo) : false;       // um único aviso: o de seleção e o de falha não se apagam
   if (trocou || aviso) toast([trocou ? 'Wallpaper selecionado.' : '', aviso].filter(Boolean).join(' '));
   redesenharTelas();
+}
+
+async function adicionarRotacao(arquivos){
+  let adicionadas = 0, falhas = 0;
+  for (const f of arquivos){
+    try {
+      if (!/^image\//.test(f.type)) throw new Error('não é imagem');
+      const id = await idDe(f);
+      const antigo = galRotacao.find(g => g.id === id);
+      const existenteFixo = gal.find(g => g.id === id);
+      const recBase = antigo || existenteFixo;
+      await DB.putRotation(recBase
+        ? { ...recBase, added: Date.now() }
+        : { id, name: f.name || 'imagem', blob: f, thumb: await miniatura(f), added: Date.now() });
+      adicionadas++;
+    } catch (e) { falhas++; }
+  }
+  await carregarGaleria();
+  const msg = adicionadas ? adicionadas + (adicionadas === 1 ? ' imagem adicionada à galeria automática.' : ' imagens adicionadas à galeria automática.') : 'Nenhuma imagem foi adicionada.';
+  toast(falhas ? msg + ' ' + falhas + ' falha(s).' : msg);
+  PREF.trocaGerado = null; salvarPrefs();
+  redesenharTelas(); desenharConfig();
+}
+async function removerRotacao(id){
+  try { await DB.delRotation(id); } catch (e) {}
+  await carregarGaleria();
+  PREF.trocaGerado = null; salvarPrefs();
+  redesenharTelas(); desenharConfig();
+  toast('Removida da galeria automática.');
 }
 
 function guardarEnquadramento(){                                  // guarda o enquadramento (e a Dock, se for individual) do wallpaper aberto
@@ -975,6 +1016,11 @@ function desenharGaleria(){
   $('gEmpty').hidden = gal.length > 0;
   $('gGrid').innerHTML = gal.map(g => `<div class="gi${g.id === curId ? ' sel' : ''}" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""><i class="chk">&#10003;</i><button class="x" type="button" aria-label="Remover do histórico">&times;</button></div>`).join('');
 }
+function desenharGaleriaRotacao(){
+  limparUrls();
+  $('rEmpty').hidden = galRotacao.length > 0;
+  $('rGrid').innerHTML = galRotacao.map(g => `<div class="gi" data-id="${esc(g.id)}"><img src="${urlDe(g)}" alt=""><button class="x" type="button" aria-label="Remover da galeria automática">&times;</button></div>`).join('');
+}
 const marcarSeg = (id, v) => [...$(id).children].forEach(b => b.classList.toggle('on', b.dataset.v === v));
 function desenharConfig(){
   marcarSeg('sTema', PREF.tema); marcarSeg('sCores', PREF.cores); marcarSeg('sQual', String(PREF.qualidade));
@@ -986,7 +1032,7 @@ function desenharConfig(){
   $('sVer').textContent = APP_VERSION;
   desenharTroca();
 }
-const VISTAS = { home: ['v-home', desenharHome], gallery: ['v-gallery', desenharGaleria], settings: ['v-settings', desenharConfig] };
+const VISTAS = { home: ['v-home', desenharHome], gallery: ['v-gallery', desenharGaleria], 'rotation-gallery': ['v-rotation-gallery', desenharGaleriaRotacao], settings: ['v-settings', desenharConfig] };
 let vista = 'home';
 function mostrar(nome){
   vista = VISTAS[nome] ? nome : (nome === 'editor' ? 'editor' : 'home');
@@ -1012,6 +1058,8 @@ $('eBack').addEventListener('click', () => ir('home'));
 $('hDock').addEventListener('click', () => ir('editor'));
 ['hPick', 'gAdd', 'gAdd2'].forEach(id => $(id).addEventListener('click', () => $('gFile').click()));   // seletor de fotos do Android: não pede permissão de armazenamento
 $('gFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionar(fs); });
+['rAdd', 'rAdd2'].forEach(id => $(id).addEventListener('click', () => $('rFile').click()));
+$('rFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionarRotacao(fs); });
 $('fWall').addEventListener('change', e => {         // o cartão "Papel de parede final" do editor também passa pelo histórico
   e.stopImmediatePropagation(); const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionar(fs);
 }, true);
@@ -1022,6 +1070,10 @@ $('gGrid').addEventListener('click', async e => {
   if (await selecionar(item.dataset.id)){ toast('Wallpaper selecionado.'); voltar(); }
 });
 $('gGrid').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('gi')) e.target.click(); });
+$('rGrid').addEventListener('click', e => {
+  const item = e.target.closest('.gi'); if (!item) return;
+  if (e.target.closest('.x')) removerRotacao(item.dataset.id);
+});
 $('splitMenu').addEventListener('click', e => {      // itens de navegação do menu do editor (captura: não chegam ao tratador antigo)
   const b = e.target.closest('button'); if (!b || !/^nav-/.test(b.dataset.act || '')) return;
   e.stopPropagation(); fecharMenu(); ir(b.dataset.act === 'nav-home' ? 'home' : 'settings');
@@ -1078,13 +1130,13 @@ if (DO && !localStorage.getItem('dockSettings')) $('outMode').value = 'device'; 
    com o WorkManager (agendador do sistema: funciona com o app fechado e depois de reiniciar o celular). */
 const trocaOk = () => !!(DO && DO.scheduleRotation);
 const hashTroca = () => JSON.stringify([OUT.w, OUT.h, SCALED.map(k => state[k]), ['ior', 'scale', 'chroma', 'shine', 'angle', 'profile'].map(k => state[k]),
-                                         gal.slice(0, LIMITE).map(g => [g.id, FR[g.id] || null]), PREF.dockIndividual, gal.slice(0, LIMITE).map(g => DK[g.id] || null)]);   // tudo o que muda o resultado das imagens
+                                         galRotacao.map(g => [g.id, FR[g.id] || null]), PREF.dockIndividual, galRotacao.map(g => DK[g.id] || null)]);   // tudo o que muda o resultado das imagens
 const trocaDesatualizada = () => !PREF.trocaGerado || PREF.trocaGerado.hash !== hashTroca();
 const paraBase64 = blob => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(blob); });
 const mostrarProgresso = (sub) => { $('progS').textContent = sub; $('progDlg').hidden = false; };
 const esconderProgresso = () => { $('progDlg').hidden = true; };
 
-/* Desenha UM wallpaper do histórico com a Dock atual, em tamanho real (JPEG), sem mexer no que está aberto no editor. */
+/* Desenha UM wallpaper da galeria automática com a Dock atual, em tamanho real (JPEG), sem mexer no que está aberto no editor. */
 async function renderizarItem(rec){
   const bmp = await createImageBitmap(rec.blob);
   const salvo = { wall, zoom: state.zoom, panX: state.panX, panY: state.panY, dock: Object.fromEntries(CAMPOS_DOCK.map(k => [k, state[k]])) };
@@ -1102,8 +1154,8 @@ async function renderizarItem(rec){
   }
 }
 async function gerarRotacao(){
-  const itens = gal.slice(0, LIMITE);
-  if (!itens.length) throw new Error('Adicione wallpapers à galeria primeiro.');
+  const itens = galRotacao;
+  if (!itens.length) throw new Error('Adicione wallpapers à Galeria automática primeiro.');
   let feitas = 0;
   mostrarProgresso('0 de ' + itens.length);
   try {
@@ -1131,7 +1183,8 @@ function desenharTroca(){
   $('tAtiva').checked = PREF.trocaAtiva;
   marcarSeg('tHoras', String(PREF.trocaHoras)); marcarSeg('tAlvo', PREF.trocaAlvo);
   $('tInfo').textContent = g ? g.n + (g.n === 1 ? ' imagem pronta' : ' imagens prontas') : 'Nenhuma imagem pronta';
-  $('tInfo2').textContent = !g ? 'São geradas com a sua Dock atual.'
+  $('tInfo2').textContent = !galRotacao.length ? 'Adicione imagens na Galeria automática.'
+    : !g ? 'As imagens serão geradas a partir da Galeria automática e da sua Dock atual.'
     : trocaDesatualizada() ? 'A Dock ou a galeria mudou: toque em Atualizar.'
     : 'Atualizadas em ' + new Date(g.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   $('tAgora').disabled = !PREF.trocaAtiva || !g;
