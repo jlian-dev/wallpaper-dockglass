@@ -949,6 +949,82 @@ async function adicionarRotacao(arquivos){
   PREF.trocaGerado = null; salvarPrefs();
   redesenharTelas(); desenharConfig();
 }
+
+// Importar wallpapers já configurados da galeria fixa
+const rImportarPainel = $('rImportarPainel');
+const rImportarGrid = $('rImportarGrid');
+
+$('rImportar').addEventListener('click', () => {
+  const abrir = rImportarPainel.hidden;
+  rImportarPainel.hidden = !abrir;
+
+  if (!abrir) return;
+
+  const disponiveis = gal.filter(
+    g => !galRotacao.some(r => r.id === g.id)
+  );
+
+  rImportarGrid.innerHTML = disponiveis.length
+    ? disponiveis.map(g => `
+      <label class="gi" style="position:relative;cursor:pointer">
+        <img src="${urlDe(g)}" alt="${esc(g.name)}">
+        <input
+          type="checkbox"
+          class="rImportarCheck"
+          value="${esc(g.id)}"
+          style="position:absolute;top:8px;right:8px;width:22px;height:22px"
+        >
+      </label>
+    `).join('')
+    : '<p class="info">Todos os wallpapers já estão na galeria automática.</p>';
+});
+
+$('rImportarConfirmar').addEventListener('click', async () => {
+  const ids = [...rImportarGrid.querySelectorAll(
+    '.rImportarCheck:checked'
+  )].map(c => c.value);
+
+  if (!ids.length) {
+    toast('Selecione pelo menos um wallpaper.');
+    return;
+  }
+
+  let adicionados = 0;
+
+  try {
+    for (const id of ids) {
+      const rec = gal.find(g => g.id === id);
+      if (!rec) continue;
+
+      await DB.putRotation({
+        ...rec,
+        added: Date.now() + adicionados
+      });
+
+      adicionados++;
+    }
+
+    await carregarGaleria();
+
+    // Não modifica DK[id] nem FR[id].
+    // Apenas marca as imagens automáticas como desatualizadas.
+    PREF.trocaGerado = null;
+    salvarPrefs();
+
+    rImportarPainel.hidden = true;
+
+    redesenharTelas();
+    desenharConfig();
+
+    toast(adicionados + ' wallpaper(s) adicionados.');
+  } catch (e) {
+    await carregarGaleria();
+    PREF.trocaGerado = null;
+    salvarPrefs();
+    redesenharTelas();
+    toast('Não foi possível concluir a importação.');
+  }
+});
 async function removerRotacao(id){
   try { await DB.delRotation(id); } catch (e) {}
   await carregarGaleria();
