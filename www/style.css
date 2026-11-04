@@ -1147,3 +1147,41 @@ summary::-webkit-details-marker {
   background: none;
   color: var(--mute);
 }
+
+/* ========== Redesign: navegação flutuante Material You ========== */
+.view .vbody { padding-bottom: calc(112px + max(env(safe-area-inset-bottom,0px), var(--sab,0px))); }
+.liquid-nav {
+  position: fixed; z-index: 58;
+  left: 50%; bottom: calc(12px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)));
+  transform: translateX(-50%);
+  width: min(calc(100% - 28px), 560px);
+  display: flex; align-items: center; gap: 3px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  background: color-mix(in srgb, var(--card) 84%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  backdrop-filter: blur(24px) saturate(145%);
+  box-shadow: 0 10px 35px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.12);
+}
+.liquid-nav button {
+  flex: 1; min-width: 0; min-height: 53px;
+  border: 0; border-radius: 999px;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  gap: 1px; padding: 5px 1px;
+  background: transparent; color: var(--mute);
+  transition: background .2s ease, color .2s ease, transform .2s ease;
+}
+.liquid-nav button.active {
+  background: var(--sc); color: var(--acc);
+}
+.liquid-nav .nav-symbol { font-family: system-ui,sans-serif; font-size: 25px; line-height: 1.1; font-weight: 600; }
+.liquid-nav .nav-label { font-size: 10px; font-weight: 800; letter-spacing: -.15px; }
+.liquid-nav button:active { transform: scale(.94); }
+.home-section-title { display: flex; align-items: center; justify-content: space-between; margin: 7px 2px 10px; font-size: 17px; font-weight: 800; }
+.home-section-title small { font-size: 12px; font-weight: 600; color: var(--mute); }
+#v-home .hero { border-radius: 28px; overflow: hidden; }
+#v-home .acts { gap: 10px; }
+#v-home .acts button { border-radius: 18px; }
+@media (prefers-reduced-motion: reduce) { .liquid-nav button { transition: none; } }

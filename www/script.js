@@ -1113,6 +1113,15 @@ let vista = 'home';
 function mostrar(nome){
   vista = VISTAS[nome] ? nome : (nome === 'editor' ? 'editor' : 'home');
   for (const k in VISTAS) $(VISTAS[k][0]).classList.toggle('on', k === vista);
+  // A barra fica visível nas telas principais e sai do caminho no editor.
+  const nav = $('liquidNav');
+  nav.hidden = vista === 'editor';
+  nav.querySelectorAll('[data-tab]').forEach(btn => {
+    const ativo = btn.dataset.tab === vista;
+    btn.classList.toggle('active', ativo);
+    if (ativo) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
+  });
   if (VISTAS[vista]) VISTAS[vista][1]();
   else { fitPhone(); schedule(); }                   // voltou ao editor
 }
