@@ -1182,6 +1182,47 @@ summary::-webkit-details-marker {
 .home-section-title { display: flex; align-items: center; justify-content: space-between; margin: 7px 2px 10px; font-size: 17px; font-weight: 800; }
 .home-section-title small { font-size: 12px; font-weight: 600; color: var(--mute); }
 #v-home .hero { border-radius: 28px; overflow: hidden; }
+
+/* Dock Líquida — animação fluida da navegação Material You.
+   Adicionar ao FINAL de www/style.css. */
+.liquid-nav {
+  --nav-index: 0;
+  isolation: isolate;
+  overflow: hidden;
+  transition: box-shadow .32s ease, background-color .32s ease;
+}
+.liquid-nav::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 7px;
+  bottom: 7px;
+  left: 7px;
+  width: calc((100% - 14px - 12px) / 5);
+  border-radius: 999px;
+  background: var(--sc);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+  transform: translateX(calc(var(--nav-index) * (100% + 3px)));
+  transition: transform .48s cubic-bezier(.2, 1.18, .3, 1), background-color .3s ease;
+  pointer-events: none;
+}
+.liquid-nav:has(button:nth-child(1).active) { --nav-index: 0; }
+.liquid-nav:has(button:nth-child(2).active) { --nav-index: 1; }
+.liquid-nav:has(button:nth-child(3).active) { --nav-index: 2; }
+.liquid-nav:has(button:nth-child(4).active) { --nav-index: 3; }
+.liquid-nav:has(button:nth-child(5).active) { --nav-index: 4; }
+.liquid-nav button { position: relative; z-index: 1; background: transparent !important; transition: color .25s ease, transform .24s ease; }
+.liquid-nav button.active { background: transparent !important; }
+.liquid-nav .nav-symbol { display: block; transition: transform .42s cubic-bezier(.2, 1.5, .35, 1); }
+.liquid-nav button.active .nav-symbol { transform: translateY(-2px) scale(1.12); }
+.liquid-nav button:active .nav-symbol { transform: scale(.88); }
+.liquid-nav .nav-label { transition: opacity .25s ease, transform .3s ease; }
+.liquid-nav button:not(.active) .nav-label { opacity: .65; transform: translateY(1px); }
+.liquid-nav button.active .nav-label { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .liquid-nav, .liquid-nav::before, .liquid-nav button,
+  .liquid-nav .nav-symbol, .liquid-nav .nav-label { transition: none !important; }
+}
 #v-home .acts { gap: 10px; }
 #v-home .acts button { border-radius: 18px; }
 @media (prefers-reduced-motion: reduce) { .liquid-nav button { transition: none; } }
