@@ -49,6 +49,7 @@ jobs:
           echo "=== Imagem de origem ==="
           file assets/icon.png
 
+      - run: node scripts/add-monochrome.js
 
       - name: Compilar
         run: |
