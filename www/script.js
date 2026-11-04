@@ -964,7 +964,7 @@ function guardarEnquadramento(){                                  // guarda o en
 }
 async function selecionar(id){
   guardarEnquadramento();                            // salva o enquadramento do wallpaper que está saindo
-  const rec = gal.find(g => g.id === id);
+  const rec = gal.find(g => g.id === id) || galRotacao.find(g => g.id === id);
   if (!rec) return false;
   try {
     const bmp = await createImageBitmap(rec.blob);
@@ -1070,9 +1070,19 @@ $('gGrid').addEventListener('click', async e => {
   if (await selecionar(item.dataset.id)){ toast('Wallpaper selecionado.'); voltar(); }
 });
 $('gGrid').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('gi')) e.target.click(); });
-$('rGrid').addEventListener('click', e => {
-  const item = e.target.closest('.gi'); if (!item) return;
-  if (e.target.closest('.x')) removerRotacao(item.dataset.id);
+$$('rGrid').addEventListener('click', async e => {
+  const item = e.target.closest('.gi');
+  if (!item) return;
+
+  if (e.target.closest('.x')) {
+    removerRotacao(item.dataset.id);
+    return;
+  }
+
+  if (await selecionar(item.dataset.id)) {
+    toast('Wallpaper selecionado.');
+    ir('editor');
+  }
 });
 $('splitMenu').addEventListener('click', e => {      // itens de navegação do menu do editor (captura: não chegam ao tratador antigo)
   const b = e.target.closest('button'); if (!b || !/^nav-/.test(b.dataset.act || '')) return;
@@ -1108,7 +1118,9 @@ $('sRestore').addEventListener('click', () => {
 (async () => {
   await carregarGaleria();
   let id = null; try { id = localStorage.getItem('dockCurrent'); } catch (e) {}
-  if (id && gal.some(g => g.id === id)) await selecionar(id);
+  if (id && (gal.some(g => g.id === id) || galRotacao.some(g => g.id === id))) {
+  await selecionar(id);
+   }
   const inicio = PREF.editorInicio && hasWall ? 'editor' : 'home';
   history.replaceState({ v: inicio }, ''); mostrar(inicio);
 })();
