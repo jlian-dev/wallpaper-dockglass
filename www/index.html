@@ -123,6 +123,24 @@
   </header>
   <div class="vbody">
     <p class="info">Adicione aqui somente os wallpapers que poderão ser usados pela troca automática. Esta coleção é independente da galeria fixa.</p>
+    <div class="card">
+  <button class="tonal" id="rImportar" type="button">
+    + Adicionar da galeria fixa
+  </button>
+
+  <div id="rImportarPainel" hidden>
+    <p class="info">
+      Selecione os wallpapers que deseja usar na troca automática.
+      As configurações individuais da Dock serão preservadas.
+    </p>
+
+    <div class="grid" id="rImportarGrid"></div>
+
+    <button class="solid" id="rImportarConfirmar" type="button">
+      Adicionar selecionados
+    </button>
+  </div>
+</div>
     <div class="grid" id="rGrid"></div>
     <div class="empty" id="rEmpty" hidden><b>Nenhum wallpaper automático</b><span>Adicione imagens para formar sua coleção de troca automática.</span><button class="solid" id="rAdd2" type="button">Adicionar imagens</button></div>
   </div>
