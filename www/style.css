@@ -1226,3 +1226,24 @@ summary::-webkit-details-marker {
 #v-home .acts { gap: 10px; }
 #v-home .acts button { border-radius: 18px; }
 @media (prefers-reduced-motion: reduce) { .liquid-nav button { transition: none; } }
+
+/* Remove o destaque de toque padrão do Android */
+.bottom-nav,
+.bottom-nav *,
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Evita seleção acidental de ícones e textos */
+.bottom-nav {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Mantém o foco visível para navegação por teclado */
+.bottom-nav button:focus-visible,
+.bottom-nav a:focus-visible {
+  outline: 2px solid var(--primary, currentColor);
+  outline-offset: 3px;
+}
