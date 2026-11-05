@@ -1529,3 +1529,18 @@ html.nav-glass-full .liquid-nav::before {
     backdrop-filter:none;
   }
 }
+
+/* Refinamento: reflexos discretos, sem faixa horizontal marcada.
+   Restrito ao modo Liquid Glass completo; padrão permanece intacto. */
+html.nav-glass-full .liquid-nav {
+  border-color: rgba(255,255,255,.15);
+  box-shadow: 0 6px 18px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.13);
+}
+html.nav-glass-full .liquid-nav::after {
+  background: linear-gradient(180deg, rgba(255,255,255,.105) 0%, rgba(255,255,255,.025) 17%, transparent 35%, transparent 80%, rgba(255,255,255,.035) 100%);
+  opacity:.65;
+}
+html.nav-glass-full .liquid-nav::before {
+  border-color:rgba(255,255,255,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.11);
+}
