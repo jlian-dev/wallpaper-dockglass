@@ -1148,126 +1148,108 @@ summary::-webkit-details-marker {
   color: var(--mute);
 }
 
-/* ========== Redesign: navegação flutuante Material You ========== */
-.view .vbody { padding-bottom: calc(112px + max(env(safe-area-inset-bottom,0px), var(--sab,0px))); }
-.liquid-nav {
-  position: fixed; z-index: 58;
-  left: 50%; bottom: calc(12px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)));
-  transform: translateX(-50%);
-  width: min(calc(100% - 28px), 560px);
-  display: flex; align-items: center; gap: 3px;
-  padding: 7px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--card);
-  background: color-mix(in srgb, var(--card) 84%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(145%);
-  backdrop-filter: blur(24px) saturate(145%);
-  box-shadow: 0 10px 35px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.12);
-}
-.liquid-nav button {
-  flex: 1; min-width: 0; min-height: 53px;
-  border: 0; border-radius: 999px;
-  display: flex; flex-direction: column; justify-content: center; align-items: center;
-  gap: 1px; padding: 5px 1px;
-  background: transparent; color: var(--mute);
-  transition: background .2s ease, color .2s ease, transform .2s ease;
-}
-.liquid-nav button.active {
-  background: var(--sc); color: var(--acc);
-}
-.liquid-nav .nav-symbol { font-family: system-ui,sans-serif; font-size: 25px; line-height: 1.1; font-weight: 600; }
-.liquid-nav .nav-label { font-size: 10px; font-weight: 800; letter-spacing: -.15px; }
-.liquid-nav button:active { transform: scale(.94); }
-.home-section-title { display: flex; align-items: center; justify-content: space-between; margin: 7px 2px 10px; font-size: 17px; font-weight: 800; }
-.home-section-title small { font-size: 12px; font-weight: 600; color: var(--mute); }
-#v-home .hero { border-radius: 28px; overflow: hidden; }
-
-/* Dock Líquida — animação fluida da navegação Material You.
-   Adicionar ao FINAL de www/style.css. */
+/* ========== Navegação Liquid Glass · quatro abas Material You ========== */
+.view .vbody { padding-bottom: calc(112px + max(env(safe-area-inset-bottom,0px),var(--sab,0px))); }
 .liquid-nav {
   --nav-index: 0;
+  position: fixed;
+  z-index: 58;
+  left: 50%;
+  bottom: calc(12px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)));
+  transform: translateX(-50%);
+  width: min(calc(100% - 28px),560px);
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  padding: 7px;
   isolation: isolate;
-  overflow: hidden;
-  transition: box-shadow .32s ease, background-color .32s ease;
-}
-.liquid-nav::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  top: 7px;
-  bottom: 7px;
-  left: 7px;
-  width: calc((100% - 14px - 12px) / 5);
+  border: 1px solid color-mix(in srgb,var(--line) 75%,var(--text) 25%);
   border-radius: 999px;
-  background: var(--sc);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
-  transform: translateX(calc(var(--nav-index) * (100% + 3px)));
-  transition: transform .48s cubic-bezier(.2, 1.18, .3, 1), background-color .3s ease;
-  pointer-events: none;
-}
-
-
-
-
-
-.liquid-nav button { position: relative; z-index: 1; background: transparent !important; transition: color .25s ease, transform .24s ease; }
-.liquid-nav button.active { background: transparent !important; }
-.liquid-nav .nav-symbol { display: block; transition: transform .42s cubic-bezier(.2, 1.5, .35, 1); }
-.liquid-nav button.active .nav-symbol { transform: translateY(-2px) scale(1.12); }
-.liquid-nav button:active .nav-symbol { transform: scale(.88); }
-.liquid-nav .nav-label { transition: opacity .25s ease, transform .3s ease; }
-.liquid-nav button:not(.active) .nav-label { opacity: .65; transform: translateY(1px); }
-.liquid-nav button.active .nav-label { opacity: 1; transform: translateY(0); }
-@media (prefers-reduced-motion: reduce) {
-  .liquid-nav, .liquid-nav::before, .liquid-nav button,
-  .liquid-nav .nav-symbol, .liquid-nav .nav-label { transition: none !important; }
-}
-#v-home .acts { gap: 10px; }
-#v-home .acts button { border-radius: 18px; }
-@media (prefers-reduced-motion: reduce) { .liquid-nav button { transition: none; } }
-
-/* Remove o destaque de toque padrão do Android */
-.bottom-nav,
-.bottom-nav *,
-button,
-a {
+  background: var(--card);
+  background: color-mix(in srgb,var(--card) 76%,transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  backdrop-filter: blur(28px) saturate(160%);
+  box-shadow: 0 12px 34px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.22),inset 0 -1px 0 rgba(255,255,255,.05);
   -webkit-tap-highlight-color: transparent;
 }
-
-/* Evita seleção acidental de ícones e textos */
-.bottom-nav {
-  -webkit-user-select: none;
-  user-select: none;
+.liquid-nav[hidden] { display:none !important; }
+/* Brilho de vidro, sem bloquear os botões. */
+.liquid-nav::after {
+  content: "";
+  position:absolute;
+  inset: 1px 10px auto;
+  height: 42%;
+  border-radius: 999px 999px 50% 50%;
+  background: linear-gradient(to bottom,rgba(255,255,255,.13),transparent);
+  pointer-events:none;
+  z-index:0;
 }
-
-/* Mantém o foco visível para navegação por teclado */
-.bottom-nav button:focus-visible,
-.bottom-nav a:focus-visible {
-  outline: 2px solid var(--primary, currentColor);
-  outline-offset: 3px;
+/* Uma única cápsula animada, dimensionada para quatro botões. */
+.liquid-nav::before {
+  content:"";
+  position:absolute;
+  z-index:0;
+  top:7px;
+  bottom:7px;
+  left:7px;
+  width:calc((100% - 14px - 9px)/4);
+  border-radius:999px;
+  background:var(--sc);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.17),0 2px 10px rgba(0,0,0,.08);
+  transform:translateX(calc(var(--nav-index)*(100% + 3px)));
+  transition:transform .43s cubic-bezier(.22,1,.36,1),background-color .25s ease;
+  pointer-events:none;
 }
+.liquid-nav:has(> button:nth-child(1).active) { --nav-index:0; }
+.liquid-nav:has(> button:nth-child(2).active) { --nav-index:1; }
+.liquid-nav:has(> button:nth-child(3).active) { --nav-index:2; }
+.liquid-nav:has(> button:nth-child(4).active) { --nav-index:3; }
+.liquid-nav > button {
+  position:relative;
+  z-index:1;
+  flex:1 1 0;
+  min-width:0;
+  min-height:56px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:2px;
+  padding:6px 1px;
+  border:0;
+  border-radius:999px;
+  background:transparent;
+  color:var(--mute);
+  -webkit-tap-highlight-color:transparent;
+  user-select:none;
+  transition:color .24s ease,transform .22s ease;
+}
+.liquid-nav > button.active { background:transparent; color:var(--acc); }
+.liquid-nav .nav-symbol { font-family:system-ui,sans-serif; font-size:25px; line-height:1.1; font-weight:600; transition:transform .34s cubic-bezier(.22,1,.36,1); }
+.liquid-nav > button.active .nav-symbol { transform:translateY(-2px) scale(1.08); }
+.liquid-nav .nav-label { font-size:10px; font-weight:800; letter-spacing:-.15px; transition:opacity .22s ease; }
+.liquid-nav > button:not(.active) .nav-label { opacity:.72; }
+.liquid-nav > button:active { transform:scale(.94); }
+.liquid-nav > button:focus-visible { outline:2px solid var(--acc); outline-offset:-3px; }
+@media (prefers-reduced-motion:reduce) {
+  .liquid-nav::before,.liquid-nav > button,.liquid-nav .nav-symbol,.liquid-nav .nav-label { transition:none !important; }
+}
+.home-section-title { display:flex; align-items:center; justify-content:space-between; margin:7px 2px 10px; font-size:17px; font-weight:800; }
+.home-section-title small { font-size:12px; font-weight:600; color:var(--mute); }
+#v-home .hero { border-radius:28px; overflow:hidden; }
+#v-home .acts { gap:10px; }
+#v-home .acts button { border-radius:18px; }
+
 /* Álbuns: usa as cores dinâmicas existentes do Material You */
 .albums-section{margin:0 0 20px}.album-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.album-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}.album-card{border:1px solid var(--outline-variant,rgba(130,130,130,.25));border-radius:20px;padding:8px;background:var(--surface-container,rgba(130,130,130,.12));color:inherit;text-align:left;display:flex;flex-direction:column;gap:5px;overflow:hidden}.album-card img,.album-placeholder{width:100%;aspect-ratio:1.4;object-fit:cover;border-radius:14px}.album-placeholder{display:grid;place-items:center;font-size:32px;background:rgba(130,130,130,.12)}.album-card span:not(.album-placeholder){font-weight:650;overflow-wrap:anywhere}.album-card small{opacity:.7}.album-manage{display:grid;gap:8px;margin:12px 0}.album-manage[hidden],.album-list[hidden]{display:none}.album-choice{display:flex;align-items:center;gap:10px;border-radius:14px;padding:8px;background:rgba(130,130,130,.09)}.album-choice img{width:46px;height:55px;object-fit:cover;border-radius:8px}.album-choice span{flex:1;min-width:0;overflow-wrap:anywhere;font-size:12px}.album-cover{font-size:11px;border-radius:12px;padding:8px;border:1px solid currentColor;background:transparent;color:inherit}.album-cover:disabled{opacity:.45}
 
 /* Galeria: gerenciamento de imagens sob demanda */
 .album-pick-toggle { display:block; width:100%; margin:12px 0; text-align:center; min-height:44px; }
-.album-pick-toggle[hidden], .album-manage[hidden] { display:none !important; }
+.album-pick-toggle[hidden],.album-manage[hidden] { display:none !important; }
 .album-manage { max-height:min(58dvh,480px); overflow-y:auto; overscroll-behavior:contain; padding:4px; border-radius:18px; }
 .album-choice { min-height:66px; }
 .album-choice span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .album-cover { flex-shrink:0; }
-.liquid-nav::before { width:calc((100% - 14px - 9px) / 4); }
-.liquid-nav:has(button:nth-child(1).active) { --nav-index:0; }
-.liquid-nav:has(button:nth-child(2).active) { --nav-index:1; }
-.liquid-nav:has(button:nth-child(3).active) { --nav-index:2; }
-.liquid-nav:has(button:nth-child(4).active) { --nav-index:3; }
-
-/* Navegação de quatro abas: destaque preso ao botão ativo, sem deslocamento incorreto */
-.liquid-nav::before { content:none !important; }
-.liquid-nav button.active { background:var(--sc) !important; color:var(--acc); }
-.liquid-nav button { -webkit-tap-highlight-color:transparent; }
-.liquid-nav button:focus-visible { outline:2px solid var(--acc); outline-offset:-3px; }
 .slide-albums { margin:14px 0; padding:14px; }
 .slide-album-list { display:grid; gap:8px; margin:10px 0; }
 .slide-album-option { display:flex; align-items:center; gap:10px; padding:11px; border-radius:12px; background:var(--card); }
