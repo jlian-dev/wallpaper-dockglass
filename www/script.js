@@ -1249,8 +1249,9 @@ $('rSlideLista').addEventListener('change',e=>{
   guardarSlide(ids);desenharGaleriaRotacao();
 });
 function desenharGaleriaRotacao(){
-  desenharAlbunsRotacao();
   limparUrls();
+  desenharAlbunsRotacao();
+
   $('rEmpty').hidden = galRotacao.length > 0;
   $('rGrid').innerHTML = galRotacao.map(g => `<div class="gi" data-id="${esc(g.id)}"><img src="${urlDe(g)}" alt=""><button class="x" type="button" aria-label="Remover da galeria automática">&times;</button></div>`).join('');
 }
