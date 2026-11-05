@@ -1103,6 +1103,11 @@ function desenharGaleria(){
   $('gGrid').innerHTML = exibidos.map(g => `<div class="gi${g.id === curId ? ' sel' : ''}" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""><i class="chk">&#10003;</i><button class="x" type="button" aria-label="Remover do histórico">&times;</button></div>`).join('');
 }
 
+let albumPainelAberto = false;
+$('albumSelecionar').addEventListener('click', () => {
+  albumPainelAberto = !albumPainelAberto;
+  desenharGaleria();
+});
 /* Álbuns organizam referências às imagens da galeria fixa; não duplicam blobs nem alteram DK/FR. */
 function desenharAlbums(){
   const atual = albums.find(a => a.id === albumAtual);
@@ -1116,22 +1121,25 @@ function desenharAlbums(){
     const primeiro = gal.find(g => g.id === a.coverId) || gal.find(g => (a.ids || []).includes(g.id));
     return `<button type="button" class="album-card" data-album="${esc(a.id)}">${primeiro ? `<img src="${urlDe(primeiro)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
   }).join('');
-  $('albumGerenciar').hidden = !albumAtual;
-  if (atual){
+  $('albumSelecionar').hidden = !albumAtual;
+  $('albumGerenciar').hidden = !albumAtual || !albumPainelAberto;
+  $('albumSelecionar').setAttribute('aria-expanded', String(!!albumAtual && albumPainelAberto));
+  $('albumSelecionar').textContent = albumPainelAberto ? 'Fechar seleção de wallpapers' : '+ Adicionar wallpapers ao álbum';
+  if (atual && albumPainelAberto){
     $('albumGerenciar').innerHTML = gal.map(g => `<label class="album-choice"><input type="checkbox" data-photo="${esc(g.id)}" ${(atual.ids || []).includes(g.id) ? 'checked' : ''}><img src="${urlDe(g)}" alt=""><span>${esc(g.name)}</span><button type="button" class="album-cover" data-cover="${esc(g.id)}" ${atual.coverId === g.id ? 'disabled' : ''}>${atual.coverId === g.id ? 'Capa atual' : 'Usar capa'}</button></label>`).join('') || '<p class="info">Adicione imagens à galeria para organizar este álbum.</p>';
   }
 }
 $('albumCriar').addEventListener('click', async () => {
   const name = prompt('Nome do novo álbum:')?.trim(); if (!name) return;
   const a = {id: 'album-' + Date.now() + '-' + Math.random().toString(36).slice(2,7), name: name.slice(0,60), ids: [], coverId: null};
-  try { await DB.putAlbum(a); albums.push(a); albumAtual = a.id; desenharGaleria(); toast('Álbum criado.'); }
+  try { await DB.putAlbum(a); albums.push(a); albumAtual = a.id; albumPainelAberto = false; desenharGaleria(); toast('Álbum criado.'); }
   catch(e){ toast('Não foi possível criar o álbum.'); }
 });
 $('albumLista').addEventListener('click', e => {
   const b = e.target.closest('[data-album]'); if (!b) return;
-  albumAtual = b.dataset.album; desenharGaleria();
+  albumAtual = b.dataset.album; albumPainelAberto = false; desenharGaleria();
 });
-$('albumVoltar').addEventListener('click', () => {albumAtual = null; desenharGaleria();});
+$('albumVoltar').addEventListener('click', () => {albumAtual = null; albumPainelAberto = false; desenharGaleria();});
 $('albumEditar').addEventListener('click', async () => {
   const a = albums.find(a => a.id === albumAtual); if (!a) return;
   const name = prompt('Renomear álbum:', a.name)?.trim(); if (!name) return;
@@ -1140,7 +1148,7 @@ $('albumEditar').addEventListener('click', async () => {
 });
 $('albumExcluir').addEventListener('click', async () => {
   const a = albums.find(a => a.id === albumAtual); if (!a || !confirm(`Excluir o álbum "${a.name}"? As imagens serão mantidas.`)) return;
-  try { await DB.delAlbum(a.id); albums = albums.filter(v => v.id !== a.id); albumAtual = null; desenharGaleria(); toast('Álbum excluído; imagens preservadas.'); }
+  try { await DB.delAlbum(a.id); albums = albums.filter(v => v.id !== a.id); albumAtual = null; albumPainelAberto = false; desenharGaleria(); toast('Álbum excluído; imagens preservadas.'); }
   catch(e){toast('Não foi possível excluir o álbum.');}
 });
 $('albumGerenciar').addEventListener('change', async e => {
