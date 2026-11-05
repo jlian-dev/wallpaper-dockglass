@@ -1258,4 +1258,19 @@ summary::-webkit-details-marker {
 .auto-albums { margin-top:18px; }
 #rAlbumGerenciar .album-choice label { display:flex; align-items:center; flex:1; gap:8px; min-width:0; }
 #rAlbumGerenciar .album-choice label span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#rAlbumGerenciar .album-choice img { width:42px; height:54px; object-fit:cover; border-radius:8px; }
+#rAlbumGerenciar .album-choice {
+  min-width: 0;
+  overflow: hidden;
+}
+
+#rAlbumGerenciar .album-choice label {
+  min-width: 0;
+  flex: 1;
+}
+
+#rAlbumGerenciar .album-choice label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
