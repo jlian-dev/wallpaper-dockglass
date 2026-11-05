@@ -140,12 +140,13 @@
   </header>
   <div class="vbody">
     <p class="info">Adicione aqui somente os wallpapers que poderão ser usados pela troca automática. Esta coleção é independente da galeria fixa.</p>
-    <div class="card">
-  <button class="tonal" id="rImportar" type="button">
-    + Adicionar da galeria fixa
-  </button>
-
-  <div id="rImportarPainel" hidden>
+    <div class="rotation-import">
+      <button class="rotation-import-trigger" id="rImportar" type="button" aria-expanded="false" aria-controls="rImportarPainel">
+        <span class="rotation-import-icon" aria-hidden="true">▧</span>
+        <span class="rotation-import-copy"><strong>Adicionar da galeria fixa</strong><small>Importar wallpapers já personalizados</small></span>
+        <span class="rotation-import-arrow" aria-hidden="true">›</span>
+      </button>
+      <div id="rImportarPainel" class="rotation-import-panel" hidden>
     <p class="info">
       Selecione os wallpapers que deseja usar na troca automática.
       As configurações individuais da Dock serão preservadas.

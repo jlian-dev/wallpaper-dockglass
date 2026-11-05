@@ -962,6 +962,7 @@ const rImportarGrid = $('rImportarGrid');
 $('rImportar').addEventListener('click', () => {
   const abrir = rImportarPainel.hidden;
   rImportarPainel.hidden = !abrir;
+  $('rImportar').setAttribute('aria-expanded', String(abrir));
 
   if (!abrir) return;
 
@@ -1017,6 +1018,7 @@ $('rImportarConfirmar').addEventListener('click', async () => {
     salvarPrefs();
 
     rImportarPainel.hidden = true;
+    $('rImportar').setAttribute('aria-expanded', 'false');
 
     redesenharTelas();
     desenharConfig();
