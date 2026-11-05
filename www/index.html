@@ -1,14 +1,22 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt" class="app-booting">
 <head>
 <meta charset="utf-8">
 <!-- viewport-fit=cover deixa a página ocupar a tela toda no telemóvel -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dock Líquida</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+<style>html.app-booting body{visibility:hidden}html.app-booting #startupSplash{visibility:visible!important;display:grid!important;position:fixed;inset:0;background:#101418;color:white;z-index:9999}</style>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="startupSplash" class="startup-splash" role="status" aria-live="polite" aria-label="Iniciando Dock Líquida">
+  <div class="startup-splash-inner">
+    <img src="app-icon.png" width="92" height="92" alt="" class="startup-logo">
+    <strong>Dock Líquida</strong>
+    <span id="startupMessage" class="startup-message">Preparando sua galeria…</span>
+  </div>
+</div>
 
 <main class="app">
   <!-- PALCO: aqui aparece o resultado -->
@@ -193,7 +201,7 @@
         <div class="seg" id="sCores"><button type="button" data-v="sistema">Sistema</button><button type="button" data-v="wallpaper">Wallpaper</button></div></div>
     </div>
     <div class="card">
-      <div class="srow"><div><b>Preferências</b><small>Abrir direto no editor</small></div><input type="checkbox" id="sEditor" aria-label="Abrir direto no editor"></div>
+      <div class="srow" hidden><div><b>Preferências</b><small>O aplicativo abre na tela inicial</small></div><input type="checkbox" id="sEditor" aria-label="Abrir direto no editor" disabled></div>
       <div class="srow"><div><b>Dock individual</b><small>Cada wallpaper guarda a própria Dock</small></div><input type="checkbox" id="sIndiv" aria-label="Dock individual por wallpaper"></div>
       <div class="srow"><div><b>Qualidade da prévia</b><small>Rápida economiza bateria</small></div>
         <div class="seg" id="sQual"><button type="button" data-v="0.6">Rápida</button><button type="button" data-v="1">Normal</button><button type="button" data-v="1.6">Nítida</button></div></div>

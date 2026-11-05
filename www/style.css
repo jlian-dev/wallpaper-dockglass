@@ -1150,89 +1150,61 @@ summary::-webkit-details-marker {
 
 /* ========== Navegação Liquid Glass · quatro abas Material You ========== */
 .view .vbody { padding-bottom: calc(112px + max(env(safe-area-inset-bottom,0px),var(--sab,0px))); }
+/* Dock Liquid Glass: superfície dinâmica Material You com reflexos e seleção deslizante. */
 .liquid-nav {
-  --nav-index: 0;
-  position: fixed;
-  z-index: 58;
-  left: 50%;
-  bottom: calc(12px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)));
-  transform: translateX(-50%);
-  width: min(calc(100% - 28px),560px);
-  display: flex;
-  align-items: stretch;
-  gap: 3px;
-  padding: 7px;
-  isolation: isolate;
-  border: 1px solid color-mix(in srgb,var(--line) 75%,var(--text) 25%);
-  border-radius: 999px;
-  background: var(--card);
-  background: color-mix(in srgb,var(--card) 76%,transparent);
-  -webkit-backdrop-filter: blur(28px) saturate(160%);
-  backdrop-filter: blur(28px) saturate(160%);
-  box-shadow: 0 12px 34px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.22),inset 0 -1px 0 rgba(255,255,255,.05);
-  -webkit-tap-highlight-color: transparent;
-}
-.liquid-nav[hidden] { display:none !important; }
-/* Brilho de vidro, sem bloquear os botões. */
-.liquid-nav::after {
-  content: "";
-  position:absolute;
-  inset: 1px 10px auto;
-  height: 42%;
-  border-radius: 999px 999px 50% 50%;
-  background: linear-gradient(to bottom,rgba(255,255,255,.13),transparent);
-  pointer-events:none;
-  z-index:0;
-}
-/* Uma única cápsula animada, dimensionada para quatro botões. */
-.liquid-nav::before {
-  content:"";
-  position:absolute;
-  z-index:0;
-  top:7px;
-  bottom:7px;
-  left:7px;
-  width:calc((100% - 14px - 9px)/4);
-  border-radius:999px;
-  background:var(--sc);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.17),0 2px 10px rgba(0,0,0,.08);
-  transform:translateX(calc(var(--nav-index)*(100% + 3px)));
-  transition:transform .43s cubic-bezier(.22,1,.36,1),background-color .25s ease;
-  pointer-events:none;
-}
-.liquid-nav:has(> button:nth-child(1).active) { --nav-index:0; }
-.liquid-nav:has(> button:nth-child(2).active) { --nav-index:1; }
-.liquid-nav:has(> button:nth-child(3).active) { --nav-index:2; }
-.liquid-nav:has(> button:nth-child(4).active) { --nav-index:3; }
-.liquid-nav > button {
-  position:relative;
-  z-index:1;
-  flex:1 1 0;
-  min-width:0;
-  min-height:56px;
+  --indicator-x:7px;
+  --indicator-w:25%;
+  position:fixed;
+  z-index:58;
+  left:50%;
+  bottom:calc(12px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)));
+  transform:translateX(-50%);
+  width:min(calc(100% - 28px),560px);
   display:flex;
-  flex-direction:column;
-  justify-content:center;
-  align-items:center;
-  gap:2px;
-  padding:6px 1px;
-  border:0;
+  gap:4px;
+  padding:7px;
+  isolation:isolate;
+  border:1px solid color-mix(in srgb,var(--line) 62%,var(--text) 38%);
   border-radius:999px;
-  background:transparent;
-  color:var(--mute);
+  background:color-mix(in srgb,var(--card) 60%,transparent);
+  -webkit-backdrop-filter:blur(30px) saturate(185%);
+  backdrop-filter:blur(30px) saturate(185%);
+  box-shadow:0 16px 40px rgba(0,0,0,.20),inset 0 1.5px 0 rgba(255,255,255,.30),inset 0 -1px 0 rgba(255,255,255,.10);
   -webkit-tap-highlight-color:transparent;
-  user-select:none;
-  transition:color .24s ease,transform .22s ease;
 }
-.liquid-nav > button.active { background:transparent; color:var(--acc); }
-.liquid-nav .nav-symbol { font-family:system-ui,sans-serif; font-size:25px; line-height:1.1; font-weight:600; transition:transform .34s cubic-bezier(.22,1,.36,1); }
-.liquid-nav > button.active .nav-symbol { transform:translateY(-2px) scale(1.08); }
-.liquid-nav .nav-label { font-size:10px; font-weight:800; letter-spacing:-.15px; transition:opacity .22s ease; }
-.liquid-nav > button:not(.active) .nav-label { opacity:.72; }
-.liquid-nav > button:active { transform:scale(.94); }
-.liquid-nav > button:focus-visible { outline:2px solid var(--acc); outline-offset:-3px; }
-@media (prefers-reduced-motion:reduce) {
-  .liquid-nav::before,.liquid-nav > button,.liquid-nav .nav-symbol,.liquid-nav .nav-label { transition:none !important; }
+.liquid-nav[hidden]{display:none!important}
+.liquid-nav::after {
+  content:"";position:absolute;inset:2px 12px auto;height:40%;border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.035) 60%,transparent);
+  pointer-events:none;z-index:0;
+}
+.liquid-nav::before {
+  content:"";position:absolute;z-index:0;top:7px;bottom:7px;left:0;
+  width:var(--indicator-w);
+  border-radius:999px;
+  background:color-mix(in srgb,var(--sc) 78%,transparent);
+  border:1px solid color-mix(in srgb,var(--line) 52%,rgba(255,255,255,.25));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 3px 12px rgba(0,0,0,.12);
+  transform:translate3d(var(--indicator-x),0,0);
+  transition:transform .44s cubic-bezier(.2,.85,.25,1.08),width .32s ease,background-color .25s ease;
+  pointer-events:none;
+}
+.liquid-nav > button {
+  position:relative;z-index:1;flex:1 1 0;min-width:0;min-height:58px;
+  display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;
+  padding:7px 1px;border:0;border-radius:999px;background:transparent;
+  color:var(--mute);-webkit-tap-highlight-color:transparent;user-select:none;
+  transition:color .25s ease,transform .2s ease;
+}
+.liquid-nav > button.active { color:var(--acc);background:transparent; }
+.liquid-nav .nav-symbol {font-family:system-ui,sans-serif;font-size:27px;line-height:1.1;font-weight:600;transition:transform .35s cubic-bezier(.2,.85,.25,1.08)}
+.liquid-nav > button.active .nav-symbol {transform:translateY(-1px) scale(1.08)}
+.liquid-nav .nav-label {font-size:10px;font-weight:800;letter-spacing:-.15px;transition:opacity .2s ease}
+.liquid-nav > button:not(.active) .nav-label {opacity:.75}
+.liquid-nav > button:active {transform:scale(.95)}
+.liquid-nav > button:focus-visible {outline:2px solid var(--acc);outline-offset:-3px}
+@media(prefers-reduced-motion:reduce){
+  .liquid-nav::before,.liquid-nav > button,.liquid-nav .nav-symbol,.liquid-nav .nav-label{transition:none!important}
 }
 .home-section-title { display:flex; align-items:center; justify-content:space-between; margin:7px 2px 10px; font-size:17px; font-weight:800; }
 .home-section-title small { font-size:12px; font-weight:600; color:var(--mute); }
@@ -1274,3 +1246,19 @@ summary::-webkit-details-marker {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Splash cobre inclusive o primeiro quadro do editor, antes do IndexedDB responder. */
+.startup-splash {
+  position:fixed;inset:0;z-index:9999;display:grid;place-items:center;
+  background:var(--bg,#101418);color:var(--text,#fff);
+  padding:max(env(safe-area-inset-top,0px),16px) 24px max(env(safe-area-inset-bottom,0px),16px);
+  opacity:1;visibility:visible;
+  transition:opacity .28s ease,visibility 0s .28s;
+}
+.startup-splash-inner {display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+.startup-logo {width:92px;height:92px;object-fit:contain;border-radius:24px;filter:drop-shadow(0 10px 24px rgba(0,0,0,.18))}
+.startup-splash strong {font-size:21px;letter-spacing:-.5px;font-weight:800}
+.startup-message {font-size:12px;color:var(--mute,#9ca5b3)}
+.app-booting .startup-splash {opacity:1;visibility:visible}
+.app-ready .startup-splash {opacity:0;visibility:hidden;pointer-events:none}
+@media(prefers-reduced-motion:reduce){.startup-splash{transition:none}}

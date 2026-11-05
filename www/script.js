@@ -1287,6 +1287,15 @@ function desenharConfig(){
 }
 const VISTAS = { home: ['v-home', desenharHome], gallery: ['v-gallery', desenharGaleria], 'rotation-gallery': ['v-rotation-gallery', desenharGaleriaRotacao], settings: ['v-settings', desenharConfig] };
 let vista = 'home';
+function atualizarIndicadorNav(){
+  const nav = $('liquidNav');
+  if (!nav || nav.hidden) return;
+  const ativo = nav.querySelector('button.active');
+  if (!ativo) return;
+  nav.style.setProperty('--indicator-x', ativo.offsetLeft + 'px');
+  nav.style.setProperty('--indicator-w', ativo.offsetWidth + 'px');
+}
+addEventListener('resize', atualizarIndicadorNav);
 function mostrar(nome){
   vista = VISTAS[nome] ? nome : (nome === 'editor' ? 'editor' : 'home');
   for (const k in VISTAS) $(VISTAS[k][0]).classList.toggle('on', k === vista);
@@ -1299,6 +1308,7 @@ function mostrar(nome){
     if (ativo) btn.setAttribute('aria-current', 'page');
     else btn.removeAttribute('aria-current');
   });
+  atualizarIndicadorNav();
   if (VISTAS[vista]) VISTAS[vista][1]();
   else { fitPhone(); schedule(); }                   // voltou ao editor
 }
@@ -1376,15 +1386,30 @@ $('sRestore').addEventListener('click', () => {
   applyTheme(); desenharConfig(); toast('Configurações restauradas.');
 });
 
-/* Início do app: reabre o último wallpaper e escolhe a tela inicial */
+/* Inicialização: a Home é sempre a primeira tela; não mostrar o editor enquanto o IndexedDB carrega. */
 (async () => {
-  await carregarGaleria();
-  let id = null; try { id = localStorage.getItem('dockCurrent'); } catch (e) {}
-  if (id && (gal.some(g => g.id === id) || galRotacao.some(g => g.id === id))) {
-  await selecionar(id);
-   }
-  const inicio = PREF.editorInicio && hasWall ? 'editor' : 'home';
-  history.replaceState({ v: inicio }, ''); mostrar(inicio);
+  try {
+    await carregarGaleria();
+    let id = null;
+    try { id = localStorage.getItem('dockCurrent'); } catch (e) {}
+    if (id && (gal.some(g => g.id === id) || galRotacao.some(g => g.id === id))) {
+      try { await selecionar(id); } catch (e) { console.warn('Wallpaper anterior indisponível', e); }
+    }
+  } catch (e) {
+    console.error('Falha ao carregar galeria na inicialização', e);
+    const msg = $('startupMessage');
+    if (msg) msg.textContent = 'Não foi possível carregar a galeria.';
+  } finally {
+    history.replaceState({ v: 'home' }, '');
+    try { mostrar('home'); } catch (e) { console.error('Falha ao abrir Início', e); }
+    document.documentElement.classList.remove('app-booting');
+    document.documentElement.classList.add('app-ready');
+    const splash = $('startupSplash');
+    if (splash) {
+      splash.addEventListener('transitionend', () => splash.remove(), { once:true });
+      setTimeout(() => splash.remove(), 700);
+    }
+  }
 })();
 applyTheme();                                        // aplica de novo agora que as preferências existem
 
