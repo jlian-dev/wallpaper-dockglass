@@ -150,6 +150,23 @@
     </button>
   </div>
 </div>
+    <section class="albums-section auto-albums">
+      <div class="sec-h"><h3 id="rAlbumTitulo">Álbuns automáticos</h3><button class="tonal" id="rAlbumCriar" type="button">+ Novo álbum</button></div>
+      <div class="album-actions">
+        <button class="tonal" id="rAlbumVoltar" type="button" hidden>← Todos os álbuns</button>
+        <button class="tonal" id="rAlbumEditar" type="button" hidden>Renomear</button>
+        <button class="tonal" id="rAlbumExcluir" type="button" hidden>Excluir álbum</button>
+      </div>
+      <div class="album-list" id="rAlbumLista"></div>
+      <button class="tonal album-pick-toggle" id="rAlbumSelecionar" type="button" hidden>+ Adicionar wallpapers ao álbum</button>
+      <div class="album-manage" id="rAlbumGerenciar" hidden></div>
+      <div class="card slide-albums">
+        <b>Slideshow automático</b>
+        <p class="info">Escolha até 2 álbuns. Sem seleção, todos os wallpapers automáticos serão utilizados.</p>
+        <div id="rSlideLista" class="slide-album-list"></div>
+        <small id="rSlideInfo"></small>
+      </div>
+    </section>
     <div class="grid" id="rGrid"></div>
     <div class="empty" id="rEmpty" hidden><b>Nenhum wallpaper automático</b><span>Adicione imagens para formar sua coleção de troca automática.</span><button class="solid" id="rAdd2" type="button">Adicionar imagens</button></div>
   </div>
@@ -201,8 +218,7 @@
 <!-- Navegação flutuante: Material You + cápsula translúcida -->
 <nav class="liquid-nav" id="liquidNav" aria-label="Navegação principal" hidden>
   <button type="button" data-go="home" data-tab="home" aria-label="Início" title="Início"><span class="nav-symbol">⌂</span><span class="nav-label">Início</span></button>
-  <button type="button" data-go="gallery" data-tab="gallery" aria-label="Galeria fixa" title="Galeria fixa"><span class="nav-symbol">▦</span><span class="nav-label">Galeria</span></button>
-  <button type="button" data-go="editor" data-tab="editor" aria-label="Personalizar Dock" title="Editor"><span class="nav-symbol">◈</span><span class="nav-label">Editor</span></button>
+  <button type="button" data-go="gallery" data-tab="gallery" aria-label="Galeria fixa" title="Galeria fixa"><span class="nav-symbol">▦</span><span class="nav-label">Galeria</span></button>nalizar Dock" title="Editor"><span class="nav-symbol">◈</span><span class="nav-label">Editor</span></button>
   <button type="button" data-go="rotation-gallery" data-tab="rotation-gallery" aria-label="Galeria automática" title="Galeria automática"><span class="nav-symbol">↻</span><span class="nav-label">Auto</span></button>
   <button type="button" data-go="settings" data-tab="settings" aria-label="Configurações" title="Configurações"><span class="nav-symbol">⚙</span><span class="nav-label">Ajustes</span></button>
 </nav>

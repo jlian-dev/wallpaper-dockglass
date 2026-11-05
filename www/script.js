@@ -871,7 +871,7 @@ const DB = (() => {
 })();
 
 const LIMITE = 100;                                  // máximo de imagens no histórico
-let gal = [], galRotacao = [], albums = [], albumAtual = null, curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
+let gal = [], galRotacao = [], albums = [], albumRotacaoAtual = null, albumRotacaoPainel = false, albumAtual = null, curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
 try { FR = JSON.parse(localStorage.getItem('dockFrames') || '{}'); } catch (e) {}
 const salvarFR = () => { try { localStorage.setItem('dockFrames', JSON.stringify(FR)); } catch (e) {} };
 
@@ -1117,7 +1117,7 @@ function desenharAlbums(){
   $('albumExcluir').hidden = !albumAtual;
   $('albumTitulo').textContent = atual ? atual.name : 'Meus álbuns';
   $('albumLista').hidden = !!albumAtual;
-  $('albumLista').innerHTML = albums.map(a => {
+  $('albumLista').innerHTML = albums.filter(a => a.type !== 'rotation').map(a => {
     const primeiro = gal.find(g => g.id === a.coverId) || gal.find(g => (a.ids || []).includes(g.id));
     return `<button type="button" class="album-card" data-album="${esc(a.id)}">${primeiro ? `<img src="${urlDe(primeiro)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
   }).join('');
@@ -1166,7 +1166,90 @@ $('albumGerenciar').addEventListener('click', async e => {
   try {await DB.putAlbum(a); desenharGaleria(); toast('Capa atualizada.');}catch(err){toast('Erro ao salvar capa.');}
 });
 
+const albunsRotacao = () => albums.filter(a => a.type === 'rotation');
+const selecionadosRotacao = () => {
+  try { return JSON.parse(localStorage.getItem('dockSlideAlbums') || '[]').filter(x => typeof x === 'string').slice(0,2); }
+  catch { return []; }
+};
+function guardarSlide(ids) {
+  localStorage.setItem('dockSlideAlbums', JSON.stringify(ids.slice(0,2)));
+  PREF.trocaGerado = null;
+  salvarPrefs();
+}
+function imagensDoSlide(){
+  const ids = selecionadosRotacao();
+  if (!ids.length) return galRotacao;
+  const validos = albunsRotacao().filter(a => ids.includes(a.id));
+  if (!validos.length) return galRotacao;
+  const conjunto = new Set(validos.flatMap(a => a.ids || []));
+  return galRotacao.filter(g => conjunto.has(g.id));
+}
+function desenharAlbunsRotacao(){
+  const atual = albunsRotacao().find(a => a.id === albumRotacaoAtual);
+  if (albumRotacaoAtual && !atual) albumRotacaoAtual = null;
+  $('rAlbumTitulo').textContent = atual ? atual.name : 'Álbuns automáticos';
+  ['rAlbumVoltar','rAlbumEditar','rAlbumExcluir'].forEach(id => $(id).hidden = !atual);
+  $('rAlbumLista').hidden = !!atual;
+  $('rAlbumLista').innerHTML = albunsRotacao().map(a => {
+    const rec = galRotacao.find(g => g.id === (a.coverId || a.ids?.[0]));
+    return `<button type="button" class="album-card" data-ralbum="${esc(a.id)}">${rec ? `<img src="${urlDe(rec)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
+  }).join('');
+  $('rAlbumSelecionar').hidden = !atual;
+  $('rAlbumSelecionar').textContent = albumRotacaoPainel ? 'Fechar seleção' : '+ Adicionar wallpapers ao álbum';
+  $('rAlbumGerenciar').hidden = !atual || !albumRotacaoPainel;
+  if (atual && albumRotacaoPainel){
+    $('rAlbumGerenciar').innerHTML = galRotacao.map(g => `<div class="album-choice"><label><input type="checkbox" data-rphoto="${esc(g.id)}" ${(atual.ids || []).includes(g.id) ? 'checked' : ''}> <img src="${urlDe(g)}" alt=""> <span>${esc(g.name)}</span></label><button type="button" class="album-cover" data-rcover="${esc(g.id)}" ${atual.coverId === g.id ? 'disabled' : ''}>${atual.coverId === g.id ? 'Capa atual' : 'Usar capa'}</button></div>`).join('') || '<p class="info">Adicione wallpapers à galeria automática.</p>';
+  }
+  const ids = selecionadosRotacao();
+  $('rSlideLista').innerHTML = albunsRotacao().map(a => `<label class="slide-album-option"><input type="checkbox" data-slide="${esc(a.id)}" ${ids.includes(a.id) ? 'checked' : ''}><span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></label>`).join('') || '<p class="info">Crie álbuns para escolher a apresentação.</p>';
+  $('rSlideInfo').textContent = ids.length ? `${ids.length}/2 álbuns selecionados · ${imagensDoSlide().length} wallpapers` : 'Usando todos os wallpapers automáticos';
+}
+$('rAlbumCriar').addEventListener('click', async () => {
+  const name = prompt('Nome do álbum automático:')?.trim(); if (!name) return;
+  const a = {id:'rot-album-'+Date.now()+'-'+Math.random().toString(36).slice(2,7), type:'rotation', name:name.slice(0,60), ids:[], coverId:null};
+  try {await DB.putAlbum(a); albums.push(a); albumRotacaoAtual=a.id; albumRotacaoPainel=false; desenharGaleriaRotacao();}catch(e){toast('Não foi possível criar o álbum.');}
+});
+$('rAlbumLista').addEventListener('click', e => {
+  const b=e.target.closest('[data-ralbum]'); if(!b)return;
+  albumRotacaoAtual=b.dataset.ralbum; albumRotacaoPainel=false; desenharGaleriaRotacao();
+});
+$('rAlbumVoltar').addEventListener('click',()=>{albumRotacaoAtual=null;albumRotacaoPainel=false;desenharGaleriaRotacao();});
+$('rAlbumSelecionar').addEventListener('click',()=>{albumRotacaoPainel=!albumRotacaoPainel;desenharGaleriaRotacao();});
+$('rAlbumEditar').addEventListener('click',async()=>{
+  const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a)return;
+  const name=prompt('Novo nome:',a.name)?.trim();if(!name)return;
+  a.name=name.slice(0,60);await DB.putAlbum(a);desenharGaleriaRotacao();
+});
+$('rAlbumExcluir').addEventListener('click',async()=>{
+  const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a||!confirm(`Excluir o álbum "${a.name}"? Os wallpapers serão mantidos.`))return;
+  await DB.delAlbum(a.id);albums=albums.filter(v=>v.id!==a.id);
+  guardarSlide(selecionadosRotacao().filter(id=>id!==a.id));
+  albumRotacaoAtual=null;albumRotacaoPainel=false;desenharGaleriaRotacao();
+});
+$('rAlbumGerenciar').addEventListener('change',async e=>{
+  const id=e.target.dataset.rphoto;if(!id)return;
+  const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a)return;
+  a.ids=e.target.checked?[...new Set([...(a.ids||[]),id])]:(a.ids||[]).filter(v=>v!==id);
+  if(!a.ids.includes(a.coverId))a.coverId=a.ids[0]||null;
+  await DB.putAlbum(a);PREF.trocaGerado=null;salvarPrefs();desenharGaleriaRotacao();
+});
+$('rAlbumGerenciar').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-rcover]');if(!b)return;
+  const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a)return;
+  if(!(a.ids||[]).includes(b.dataset.rcover)){toast('Adicione a imagem ao álbum primeiro.');return;}
+  a.coverId=b.dataset.rcover;await DB.putAlbum(a);desenharGaleriaRotacao();
+});
+$('rSlideLista').addEventListener('change',e=>{
+  const id=e.target.dataset.slide;if(!id)return;
+  let ids=selecionadosRotacao();
+  if(e.target.checked && !ids.includes(id)){
+    if(ids.length>=2){e.target.checked=false;toast('Escolha no máximo 2 álbuns.');return;}
+    ids.push(id);
+  }else if(!e.target.checked)ids=ids.filter(v=>v!==id);
+  guardarSlide(ids);desenharGaleriaRotacao();
+});
 function desenharGaleriaRotacao(){
+  desenharAlbunsRotacao();
   limparUrls();
   $('rEmpty').hidden = galRotacao.length > 0;
   $('rGrid').innerHTML = galRotacao.map(g => `<div class="gi" data-id="${esc(g.id)}"><img src="${urlDe(g)}" alt=""><button class="x" type="button" aria-label="Remover da galeria automática">&times;</button></div>`).join('');
@@ -1301,7 +1384,7 @@ if (DO && !localStorage.getItem('dockSettings')) $('outMode').value = 'device'; 
    com o WorkManager (agendador do sistema: funciona com o app fechado e depois de reiniciar o celular). */
 const trocaOk = () => !!(DO && DO.scheduleRotation);
 const hashTroca = () => JSON.stringify([OUT.w, OUT.h, SCALED.map(k => state[k]), ['ior', 'scale', 'chroma', 'shine', 'angle', 'profile'].map(k => state[k]),
-                                         galRotacao.map(g => [g.id, FR[g.id] || null]), PREF.dockIndividual, galRotacao.map(g => DK[g.id] || null)]);   // tudo o que muda o resultado das imagens
+                                         imagensDoSlide().map(g => [g.id, FR[g.id] || null]), PREF.dockIndividual, imagensDoSlide().map(g => DK[g.id] || null)]);   // tudo o que muda o resultado das imagens
 const trocaDesatualizada = () => !PREF.trocaGerado || PREF.trocaGerado.hash !== hashTroca();
 const paraBase64 = blob => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(blob); });
 const mostrarProgresso = (sub) => { $('progS').textContent = sub; $('progDlg').hidden = false; };
@@ -1325,7 +1408,7 @@ async function renderizarItem(rec){
   }
 }
 async function gerarRotacao(){
-  const itens = galRotacao;
+  const itens = imagensDoSlide();
   if (!itens.length) throw new Error('Adicione wallpapers à Galeria automática primeiro.');
   let feitas = 0;
   mostrarProgresso('0 de ' + itens.length);
@@ -1354,7 +1437,7 @@ function desenharTroca(){
   $('tAtiva').checked = PREF.trocaAtiva;
   marcarSeg('tHoras', String(PREF.trocaHoras)); marcarSeg('tAlvo', PREF.trocaAlvo);
   $('tInfo').textContent = g ? g.n + (g.n === 1 ? ' imagem pronta' : ' imagens prontas') : 'Nenhuma imagem pronta';
-  $('tInfo2').textContent = !galRotacao.length ? 'Adicione imagens na Galeria automática.'
+  $('tInfo2').textContent = !imagensDoSlide().length ? 'Adicione imagens aos álbuns selecionados ou à Galeria automática.'
     : !g ? 'As imagens serão geradas a partir da Galeria automática e da sua Dock atual.'
     : trocaDesatualizada() ? 'A Dock ou a galeria mudou: toque em Atualizar.'
     : 'Atualizadas em ' + new Date(g.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });

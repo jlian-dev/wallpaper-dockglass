@@ -1262,3 +1262,18 @@ a {
 .liquid-nav:has(button:nth-child(2).active) { --nav-index:1; }
 .liquid-nav:has(button:nth-child(3).active) { --nav-index:2; }
 .liquid-nav:has(button:nth-child(4).active) { --nav-index:3; }
+
+/* Navegação de quatro abas: destaque preso ao botão ativo, sem deslocamento incorreto */
+.liquid-nav::before { content:none !important; }
+.liquid-nav button.active { background:var(--sc) !important; color:var(--acc); }
+.liquid-nav button { -webkit-tap-highlight-color:transparent; }
+.liquid-nav button:focus-visible { outline:2px solid var(--acc); outline-offset:-3px; }
+.slide-albums { margin:14px 0; padding:14px; }
+.slide-album-list { display:grid; gap:8px; margin:10px 0; }
+.slide-album-option { display:flex; align-items:center; gap:10px; padding:11px; border-radius:12px; background:var(--card); }
+.slide-album-option span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.slide-album-option small { opacity:.7; }
+.auto-albums { margin-top:18px; }
+#rAlbumGerenciar .album-choice label { display:flex; align-items:center; flex:1; gap:8px; min-width:0; }
+#rAlbumGerenciar .album-choice label span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#rAlbumGerenciar .album-choice img { width:42px; height:54px; object-fit:cover; border-radius:8px; }
