@@ -1311,6 +1311,7 @@ function mostrar(nome){
     else btn.removeAttribute('aria-current');
   });
   atualizarIndicadorNav();
+  requestAnimationFrame(atualizarIndicadorNav);
   if (VISTAS[vista]) VISTAS[vista][1]();
   else { fitPhone(); schedule(); }                   // voltou ao editor
 }
