@@ -826,10 +826,14 @@ const APP_VERSION = '1.1.0';
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
 /* Preferências guardadas no aparelho */
-const PREF_PADRAO = { tema: 'auto', cores: 'sistema', editorInicio: false, qualidade: 1, trocaAtiva: false, trocaHoras: 24, trocaAlvo: 'home', trocaGerado: null, dockIndividual: true };
+const PREF_PADRAO = { tema: 'auto', cores: 'sistema', editorInicio: false, qualidade: 1, trocaAtiva: false, trocaHoras: 24, trocaAlvo: 'home', trocaGerado: null, dockIndividual: true, glassFull: false };
 var PREF = { ...PREF_PADRAO };                      // var: applyTheme() pode ser chamada antes desta linha
 try { Object.assign(PREF, JSON.parse(localStorage.getItem('dockPrefs') || '{}')); } catch (e) {}
 const salvarPrefs = () => { try { localStorage.setItem('dockPrefs', JSON.stringify(PREF)); } catch (e) {} };
+function aplicarGlassNav(){
+  document.documentElement.classList.toggle('nav-glass-full', !!PREF.glassFull);
+}
+aplicarGlassNav();
 const _pf = previewFactor;                          // "Qualidade da prévia" multiplica a resolução do desenho
 previewFactor = function () { return Math.min(1, Math.max(.15, _pf() * PREF.qualidade)); };
 
@@ -1281,6 +1285,7 @@ function desenharConfig(){
   marcarSeg('sTema', PREF.tema); marcarSeg('sCores', PREF.cores); marcarSeg('sQual', String(PREF.qualidade));
   $('sEditor').checked = PREF.editorInicio;
   $('sIndiv').checked = PREF.dockIndividual;
+  $('sGlassFull').checked = !!PREF.glassFull;
   $('rowCores').hidden = !SYS;                       // a paleta do sistema só existe no APK (Android 12+)
   $('sHistN').textContent = gal.length + (gal.length === 1 ? ' imagem' : ' imagens');
   $('sHistClear').disabled = !gal.length;
@@ -1369,6 +1374,7 @@ $('sTema').addEventListener('click', e => { const b = e.target.closest('button')
 $('sCores').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.cores = b.dataset.v; salvarPrefs(); applyTheme(); marcarSeg('sCores', PREF.cores); } });
 $('sQual').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.qualidade = +b.dataset.v; salvarPrefs(); marcarSeg('sQual', b.dataset.v); schedule(); } });
 $('sEditor').addEventListener('change', e => { PREF.editorInicio = e.target.checked; salvarPrefs(); });
+$('sGlassFull').addEventListener('change', e => { PREF.glassFull = e.target.checked; salvarPrefs(); aplicarGlassNav(); });
 $('sIndiv').addEventListener('change', e => {
   PREF.dockIndividual = e.target.checked; salvarPrefs();
   if (PREF.dockIndividual && curId){ DK[curId] = dockAtual(); salvarDK(); }   // ao ligar, o wallpaper aberto guarda a Dock que está aberta
@@ -1386,6 +1392,7 @@ $('sRestore').addEventListener('click', () => {
   Object.assign(PREF, PREF_PADRAO); salvarPrefs(); DK = {}; salvarDK();     // cada wallpaper volta a começar com a Dock padrão
   if (tinhaTroca && trocaOk()) desligarTroca().catch(() => {});      // a troca automática também volta ao padrão (desligada)
   $('btnReset').click();                             // reaproveita a restauração que já existia (Dock, vidro, tamanho)
+  aplicarGlassNav();
   applyTheme(); desenharConfig(); toast('Configurações restauradas.');
 });
 
