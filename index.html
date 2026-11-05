@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover deixa a página ocupar a tela toda no telemóvel -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dock Líquida</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main class="app">
+  <!-- PALCO: aqui aparece o resultado -->
+  <section class="stage">
+    <button id="btnBig" class="bigbtn" type="button">Ampliar prévia</button>
+    <button id="eBack" class="ebtn" type="button" aria-label="Voltar ao início">&larr;</button>
+    <div class="pwrap" id="pwrap"><div class="phone" id="phone"><canvas id="cv"></canvas></div></div>
+    <div class="info" id="info"></div>
+    <div class="info">Arraste a Dock para movê-la e o resto da imagem para enquadrar; pinça ou roda do mouse dão zoom. Use −1 / +1 para o ajuste fino.</div>
+  </section>
+
+  <!-- PAINEL DE CONTROLOS -->
+  <aside class="panel" id="panel">
+    <div class="topbar">
+      <nav class="dtabs" id="dtabs"><button type="button" data-t="base" class="on">Base</button><button type="button" data-t="dock">Dock</button></nav>
+    </div>
+
+    <details open><summary>Imagens</summary>
+    <label class="file"><span class="thumb" id="tWall"></span><span class="ftxt"><b>Papel de parede final</b><small id="nWall">Toque para escolher uma imagem</small></span><input type="file" accept="image/*" id="fWall"></label>
+
+    </details>
+    <details open><summary>Papel de parede: tamanho, corte e desfoque</summary>
+    <select id="outMode" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
+      <option value="auto">Igual à imagem</option>
+      <option value="device">Tela deste aparelho</option>
+      <option value="custom">Personalizado</option>
+    </select>
+    <div class="row"><label for="outW">Largura × Altura</label>
+      <div class="step"><input type="number" id="outW"><input type="number" id="outH"></div></div>
+    <div id="fitSliders"></div>
+    <button id="btnFitReset" type="button" class="tonal" style="width:100%;margin-top:6px">Restaurar enquadramento</button>
+
+    </details>
+    <details open><summary>Posição da dock (precisão de 1 px)</summary>
+    <button id="btnLive" type="button" class="solid" style="display:none;width:100%;margin-bottom:12px">Alinhar sobre a tela inicial</button>
+    <div id="steppers"></div>
+
+    </details>
+    <details open><summary>Efeito de vidro</summary>
+    <div class="estilos" id="estilos" role="group" aria-label="Estilos do vidro">
+      <button type="button" data-e="cristal">Cristal</button><button type="button" data-e="gelo">Gelo</button><button type="button" data-e="fosco">Fosco</button><button type="button" data-e="liquido">Líquido</button><button type="button" data-e="sutil">Sutil</button>
+    </div>
+    <label>Formato do bisel
+      <select data-k="profile" style="width:100%;margin:6px 0 10px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit">
+        <option value="squircle">Squircle (estilo Apple)</option>
+        <option value="circle">Círculo</option>
+        <option value="lip">Lip (borda alta, centro côncavo)</option>
+        <option value="concave">Côncavo</option>
+      </select></label>
+    <div id="sliders"></div>
+
+    <button id="btnReset" style="width:100%;margin-top:6px">Repor valores padrão</button>
+    </details>
+    <div class="bar">
+      <div class="split" id="split">
+        <button type="button" id="splitMain" class="split-main">Baixar PNG</button>
+        <button type="button" id="splitArrow" class="split-arrow" aria-label="Mais ações" aria-expanded="false"></button>
+        <div class="split-menu" id="splitMenu" hidden>
+          <button type="button" data-act="nav-home">Início</button>
+          <button type="button" data-act="nav-settings">Configurações</button>
+          <button type="button" data-act="apply" id="actApply" hidden>Aplicar como wallpaper…</button>
+          <button type="button" data-act="hires">Baixar em Alta Resolução</button>
+          <button type="button" data-act="project">Salvar Projeto</button>
+          <button type="button" data-act="open">Abrir Projeto</button>
+          <input type="file" id="fProj" accept=".json,application/json" hidden>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<!-- ===== Telas: Início, Galeria e Configurações (o editor da Dock continua sendo o <main class="app"> acima) ===== -->
+<section class="view" id="v-home" aria-label="Início">
+  <header class="vh">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="var(--acc)"/><rect x="4.5" y="14.5" width="15" height="5" rx="2.5" fill="var(--acc-fg)" opacity=".95"/><circle cx="9" cy="17" r="1.1" fill="var(--acc)"/><circle cx="12" cy="17" r="1.1" fill="var(--acc)"/><circle cx="15" cy="17" r="1.1" fill="var(--acc)"/></svg>
+      <b>Dock Líquida</b>
+    </div>
+    <button class="ib" type="button" data-go="settings" aria-label="Abrir configurações">&#9776;</button>
+  </header>
+  <div class="vbody">
+    <div class="home-section-title"><span>Seu wallpaper</span><small>Prévia atual</small></div>
+    <div class="hero">
+      <img id="heroImg" alt="Prévia do wallpaper atual com a Dock" hidden>
+      <div class="hero-empty" id="heroEmpty"><b>Nenhum wallpaper ainda</b><span>Escolha uma imagem para ver a prévia com a sua Dock.</span></div>
+    </div>
+    <div class="acts">
+      <button class="solid big" id="hPick" type="button">Escolher wallpaper</button>
+      <button class="tonal big" id="hDock" type="button">Personalizar Dock</button>
+    </div>
+    <div class="sec-h"><h3>Recentes</h3><div><button class="link" type="button" data-go="gallery">Galeria fixa</button><button class="link" type="button" data-go="rotation-gallery">Automática</button></div></div>
+    <div class="strip" id="hRecent"></div>
+  </div>
+</section>
+
+<section class="view" id="v-gallery" aria-label="Galeria">
+  <header class="vh">
+    <button class="ib" type="button" data-back aria-label="Voltar">&larr;</button>
+    <b class="vt">Galeria</b>
+    <button class="solid sm" id="gAdd" type="button">+ Adicionar</button>
+  </header>
+  <div class="vbody">
+    <div class="albums-section">
+      <div class="sec-h"><h3 id="albumTitulo">Meus álbuns</h3><button class="tonal" id="albumCriar" type="button">+ Novo álbum</button></div>
+      <div class="album-actions"><button type="button" class="tonal" id="albumVoltar" hidden>← Todos os álbuns</button><button type="button" class="tonal" id="albumEditar" hidden>Renomear</button><button type="button" class="tonal" id="albumExcluir" hidden>Excluir álbum</button></div>
+      <div class="album-list" id="albumLista"></div>
+      <div class="album-manage" id="albumGerenciar" hidden></div>
+    </div>
+    <div class="sec-h"><h3>Wallpapers</h3></div>
+    <div class="grid" id="gGrid"></div>
+    <div class="empty" id="gEmpty" hidden><b>Sua galeria está vazia</b><span>Adicione imagens do aparelho. Elas ficam guardadas aqui para você reutilizar quando quiser.</span><button class="solid" id="gAdd2" type="button">Adicionar imagem</button></div>
+  </div>
+</section>
+
+<section class="view" id="v-rotation-gallery" aria-label="Galeria automática">
+  <header class="vh">
+    <button class="ib" type="button" data-back aria-label="Voltar">&larr;</button>
+    <b class="vt">Galeria automática</b>
+    <button class="solid sm" id="rAdd" type="button">+ Adicionar</button>
+  </header>
+  <div class="vbody">
+    <p class="info">Adicione aqui somente os wallpapers que poderão ser usados pela troca automática. Esta coleção é independente da galeria fixa.</p>
+    <div class="card">
+  <button class="tonal" id="rImportar" type="button">
+    + Adicionar da galeria fixa
+  </button>
+
+  <div id="rImportarPainel" hidden>
+    <p class="info">
+      Selecione os wallpapers que deseja usar na troca automática.
+      As configurações individuais da Dock serão preservadas.
+    </p>
+
+    <div class="grid" id="rImportarGrid"></div>
+
+    <button class="solid" id="rImportarConfirmar" type="button">
+      Adicionar selecionados
+    </button>
+  </div>
+</div>
+    <div class="grid" id="rGrid"></div>
+    <div class="empty" id="rEmpty" hidden><b>Nenhum wallpaper automático</b><span>Adicione imagens para formar sua coleção de troca automática.</span><button class="solid" id="rAdd2" type="button">Adicionar imagens</button></div>
+  </div>
+</section>
+
+<section class="view" id="v-settings" aria-label="Configurações">
+  <header class="vh">
+    <button class="ib" type="button" data-back aria-label="Voltar">&larr;</button>
+    <b class="vt">Configurações</b>
+  </header>
+  <div class="vbody">
+    <h4>Principal</h4>
+    <div class="card list">
+      <button type="button" data-go="home">Início</button>
+      <button type="button" data-go="gallery">Galeria fixa</button>
+      <button type="button" data-go="rotation-gallery">Galeria automática</button>
+      <button type="button" data-go="editor">Personalizar Dock</button>
+    </div>
+    <h4>Configurações</h4>
+    <div class="card">
+      <div class="srow"><div><b>Aparência</b><small>Tema da interface</small></div>
+        <div class="seg" id="sTema"><button type="button" data-v="auto">Auto</button><button type="button" data-v="claro">Claro</button><button type="button" data-v="escuro">Escuro</button></div></div>
+      <div class="srow" id="rowCores" hidden><div><b>Origem das cores</b><small>Material You ou wallpaper</small></div>
+        <div class="seg" id="sCores"><button type="button" data-v="sistema">Sistema</button><button type="button" data-v="wallpaper">Wallpaper</button></div></div>
+    </div>
+    <div class="card">
+      <div class="srow"><div><b>Preferências</b><small>Abrir direto no editor</small></div><input type="checkbox" id="sEditor" aria-label="Abrir direto no editor"></div>
+      <div class="srow"><div><b>Dock individual</b><small>Cada wallpaper guarda a própria Dock</small></div><input type="checkbox" id="sIndiv" aria-label="Dock individual por wallpaper"></div>
+      <div class="srow"><div><b>Qualidade da prévia</b><small>Rápida economiza bateria</small></div>
+        <div class="seg" id="sQual"><button type="button" data-v="0.6">Rápida</button><button type="button" data-v="1">Normal</button><button type="button" data-v="1.6">Nítida</button></div></div>
+    </div>
+    <div class="card" id="cardTroca" hidden>
+      <div class="srow"><div><b>Troca automática</b><small>Troca o wallpaper sozinho, com o app fechado</small></div><input type="checkbox" id="tAtiva" aria-label="Ativar a troca automática"></div>
+      <div class="srow"><div><b>Intervalo</b></div>
+        <div class="seg" id="tHoras"><button type="button" data-v="6">6 h</button><button type="button" data-v="12">12 h</button><button type="button" data-v="24">24 h</button><button type="button" data-v="48">48 h</button></div></div>
+      <div class="srow"><div><b>Aplicar em</b></div>
+        <div class="seg" id="tAlvo"><button type="button" data-v="home">Início</button><button type="button" data-v="lock">Bloqueio</button><button type="button" data-v="both">Ambas</button></div></div>
+      <div class="srow"><div><b id="tInfo">Nenhuma imagem pronta</b><small id="tInfo2"></small></div><button class="tonal sm" id="tAtualizar" type="button">Atualizar</button></div>
+      <button class="rowbtn" id="tAgora" type="button">Trocar agora</button>
+    </div>
+    <div class="card">
+      <div class="srow"><div><b>Histórico de wallpapers</b><small id="sHistN">0 imagens</small></div><button class="tonal sm" id="sHistClear" type="button">Limpar</button></div>
+      <button class="rowbtn" id="sRestore" type="button">Restaurar configurações padrão</button>
+    </div>
+    <h4>Sobre</h4>
+    <div class="card about"><b>Dock Líquida</b><small>Versão <span id="sVer"></span></small><small>Efeito de refração baseado no artigo “Liquid Glass in the Browser”, de kube.io.</small></div>
+  </div>
+</section>
+<!-- Navegação flutuante: Material You + cápsula translúcida -->
+<nav class="liquid-nav" id="liquidNav" aria-label="Navegação principal" hidden>
+  <button type="button" data-go="home" data-tab="home" aria-label="Início" title="Início"><span class="nav-symbol">⌂</span><span class="nav-label">Início</span></button>
+  <button type="button" data-go="gallery" data-tab="gallery" aria-label="Galeria fixa" title="Galeria fixa"><span class="nav-symbol">▦</span><span class="nav-label">Galeria</span></button>
+  <button type="button" data-go="editor" data-tab="editor" aria-label="Personalizar Dock" title="Editor"><span class="nav-symbol">◈</span><span class="nav-label">Editor</span></button>
+  <button type="button" data-go="rotation-gallery" data-tab="rotation-gallery" aria-label="Galeria automática" title="Galeria automática"><span class="nav-symbol">↻</span><span class="nav-label">Auto</span></button>
+  <button type="button" data-go="settings" data-tab="settings" aria-label="Configurações" title="Configurações"><span class="nav-symbol">⚙</span><span class="nav-label">Ajustes</span></button>
+</nav>
+<div class="dlg" id="alvoDlg" hidden role="dialog" aria-modal="true" aria-label="Aplicar wallpaper em">
+  <div class="dlg-box"><b>Aplicar wallpaper em</b>
+    <button type="button" data-alvo="home">Tela inicial</button>
+    <button type="button" data-alvo="lock">Tela de bloqueio</button>
+    <button type="button" data-alvo="both">Ambas</button>
+    <button type="button" data-alvo="" class="ghost">Cancelar</button></div></div>
+<div class="dlg" id="progDlg" hidden role="alertdialog" aria-modal="true" aria-label="Gerando imagens">
+  <div class="dlg-box"><b id="progT">Gerando imagens…</b><small id="progS"></small><small>Não feche o app até terminar.</small></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="gFile" accept="image/*" multiple hidden>
+<input type="file" id="rFile" accept="image/*" multiple hidden>
+
+<script src="script.js"></script>
+</body>
+</html>

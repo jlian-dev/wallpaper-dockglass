@@ -1,0 +1,1251 @@
+/* =====================================================================
+   Dock Líquida · style.css
+
+   Organizado por componente. Quando duas regras têm a mesma prioridade, a última vence;
+   por isso as regras de celular (@media) ficam no fim de cada seção.
+   Cores nunca são fixas: vêm das variáveis do tema, trocadas pelo JavaScript.
+
+   Seções:
+   1. Base e controles genéricos
+   2. Controles e cartões do editor
+   3. Editor: prévia (área escura no topo)
+   4. Editor: painel de controles e barra de ações
+   5. Telas: início, galeria e configurações
+   6. Avisos e caixas de diálogo
+   ===================================================================== */
+
+/* ================= 1. Base e controles genéricos ================= */
+
+/* Todos os elementos contam padding e borda dentro da largura. */
+* {
+  box-sizing: border-box;
+}
+
+/* Fonte, fundo e cor do texto. As cores (--bg, --panel, --card, --sc, --acc, --acc-fg, --text, --mute, --line, --stage) são trocadas pelo JavaScript (applyTheme): paleta do sistema ou do wallpaper, claro/escuro (Material 3). */
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 15px/1.45 Manrope,system-ui,sans-serif;
+}
+
+/* Ao rolar até um elemento, deixa espaço para a barra de status. */
+html {
+  scroll-padding-top: env(safe-area-inset-top,0px);
+}
+
+/* Rótulos dos campos. */
+label {
+  font-size: 14px;
+}
+
+/* Botão base. As variações (.solid, .tonal, .ib, .seg…) vêm nas seções seguintes. */
+button {
+  font: inherit;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 34px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+/* Realce ao passar o mouse (só no computador). */
+button:hover {
+  border-color: var(--acc);
+}
+
+/* Contorno visível para quem navega pelo teclado. */
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+@media (max-width:820px) {
+  /* No celular o app ocupa a tela toda. */
+    html,
+    body {
+      height: 100%;
+    }
+}
+
+/* O atributo hidden sempre esconde, mesmo se outra regra definir display. */
+[hidden] {
+  display: none !important;
+}
+
+/* Botões e campos usam a cor de cartão do tema. */
+button,
+.step input,
+select {
+  background-color: var(--card);
+}
+
+@media (max-width:820px) {
+  /* No celular a página não rola; só o painel rola por dentro. */
+    body {
+      overflow: hidden;
+    }
+}
+
+/* ================= 2. Controles e cartões do editor ================= */
+
+/* Linha com o rótulo à esquerda e o controle à direita. */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Cartão de escolha de imagem (miniatura + nome do arquivo). */
+.file {
+  cursor: pointer;
+  display: flex;
+  margin-bottom: 8px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+/* Realce ao passar o mouse ou focar. */
+.file:hover,
+.file:focus-within {
+  border-color: var(--acc);
+}
+
+/* O campo de arquivo fica escondido: o cartão inteiro é o botão. */
+.file input {
+  display: none;
+}
+
+/* Grupo −1 / valor / +1 dos ajustes de precisão. */
+.step {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Campo numérico do ajuste fino. */
+.step input {
+  width: 64px;
+  text-align: center;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 2px;
+  font: inherit;
+}
+
+/* Sliders na cor de destaque do tema. */
+input[type=range] {
+  width: 100%;
+  accent-color: var(--acc);
+}
+
+/* Texto pequeno do cartão (nome do arquivo). */
+.file small {
+  color: var(--mute);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rótulo do slider, com o valor atual à direita. */
+.lv {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Valor atual do slider. */
+.lv output {
+  color: var(--acc);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Miniatura quadrada do cartão de imagem. */
+.thumb {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.08) center/cover no-repeat;
+  display: grid;
+  place-items: center;
+  background-color: var(--sc);
+}
+
+/* O sinal “+” aparece enquanto não há imagem. */
+.thumb::after {
+  content: "+";
+  color: var(--mute);
+  font-size: 22px;
+}
+
+/* Com imagem escolhida, o “+” some. */
+.thumb.has::after {
+  content: none;
+}
+
+/* Coluna de texto do cartão (título + nome do arquivo). */
+.ftxt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Botão principal, na cor de destaque do tema. */
+.solid {
+  background: var(--acc);
+  color: var(--acc-fg);
+  border: 0;
+  font-weight: 800;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+/* Interruptor On/Off: o trilho… */
+input[type=checkbox] {
+  appearance: none;
+  flex: none;
+  width: 48px;
+  height: 28px;
+  border-radius: 14px;
+  position: relative;
+  cursor: pointer;
+  transition: background .2s;
+  background: var(--line);
+}
+
+/* …e a bolinha. */
+input[type=checkbox]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+  transition: transform .2s;
+}
+
+/* Ligado: trilho na cor de destaque. */
+input[type=checkbox]:checked {
+  background: var(--acc);
+}
+
+/* Ligado: a bolinha vai para a direita. */
+input[type=checkbox]:checked::after {
+  transform: translateX(20px);
+}
+
+/* Botão quadrado com ícone (voltar, menu). */
+.ib {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: var(--sc);
+  font-size: 20px;
+  display: grid;
+  place-items: center;
+}
+
+/* Botão secundário, em tom suave do tema. */
+.tonal {
+  background: var(--sc);
+  border: 0;
+  font-weight: 800;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+/* Versão grande (largura total) dos botões da tela inicial. */
+.solid.big,
+.tonal.big {
+  padding: 16px;
+  font-size: 16px;
+  border-radius: 16px;
+}
+
+/* Versão compacta dos botões. */
+.sm {
+  padding: 9px 14px;
+  font-size: 14px;
+}
+
+/* Botão com aparência de link (“Ver galeria”). */
+.link {
+  border: 0;
+  background: none;
+  color: var(--acc);
+  font-weight: 800;
+  padding: 6px;
+}
+
+/* Estilos do vidro: fileira de atalhos (quebra de linha para todos ficarem visíveis). */
+.estilos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0 12px;
+}
+.estilos button {
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--sc);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.estilos button.on {
+  background: var(--acc);
+  color: var(--acc-fg);
+}
+
+/* ================= 3. Editor: prévia (área escura no topo) ================= */
+
+/* Editor: no computador, prévia e painel lado a lado. */
+.app {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  min-height: 100vh;
+  grid-template-columns: 1fr 360px;
+}
+
+/* Área escura da prévia. */
+.stage {
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  min-height: 60vh;
+  background: var(--stage);
+  position: relative;
+}
+
+/* Texto de resolução/qualidade abaixo da imagem. */
+.info {
+  font-size: 13px;
+}
+
+/* A imagem desenhada pelo JavaScript. */
+canvas {
+  touch-action: none;
+  cursor: grab;
+}
+
+@media (max-width:820px) {
+  /* No celular o botão de ampliar aparece. */
+    .bigbtn {
+      align-self: flex-end;
+    }
+
+  /* No celular a imagem preenche a caixa sem distorcer. */
+    canvas {
+      flex: 1;
+    }
+}
+
+/* Botão “ampliar prévia”: só existe no celular. */
+.bigbtn {
+  display: none !important;
+}
+
+/* Caixa que centraliza a prévia; o JavaScript ajusta o tamanho dela para manter a proporção do wallpaper. */
+.pwrap {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Caixa da imagem: cantos arredondados e sombra (sem moldura de celular). */
+.phone {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+}
+
+/* Sem o “notch” da moldura antiga. */
+.phone::after {
+  content: "";
+  position: absolute;
+  width: 26%;
+  height: 13px;
+  background: #000;
+  display: none;
+}
+
+/* A imagem preenche a caixa inteira. */
+.phone canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+  border-radius: 14px;
+}
+
+@media (max-width:820px) {
+  /* No celular a dica de arrastar fica escondida. */
+    .stage .info:last-child {
+      display: none;
+    }
+}
+
+/* Texto claro sobre o fundo escuro. */
+.stage .info {
+  color: rgba(255,255,255,.7);
+}
+
+@media (max-width:820px) {
+  /* Prévia ampliada: mais altura. */
+    .stage.big {
+      height: 80vh;
+    }
+
+  /* Ícone de reduzir, quando a prévia está ampliada. */
+    .stage.big .bigbtn::before {
+      content: "⤡";
+    }
+}
+
+/* Botão ← (voltar ao início) sobre a prévia. */
+.stage .ebtn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--sc);
+  font-size: 20px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+
+@media (max-width:820px) {
+  /* Prévia fixa no topo, com altura em % da tela. */
+    .stage {
+      gap: 4px;
+      min-height: 0;
+      flex: none;
+      border-radius: 0;
+      height: 58vh;
+      padding: 4px 8px 2px;
+    }
+
+  /* O botão de ampliar vira um quadrado só com ícone, no canto. */
+    .stage .bigbtn {
+      position: absolute;
+      z-index: 2;
+      border: 0;
+      display: grid !important;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      top: 8px;
+      font-size: 0;
+      border-radius: 12px;
+      background: var(--sc);
+      box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    }
+
+  /* Editor em coluna: prévia em cima, painel embaixo, ocupando a tela toda. */
+    .app {
+      grid-template-columns: 1fr;
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding: env(safe-area-inset-top,0px) 0 0;
+      min-height: 0;
+      background: var(--stage);
+    }
+
+  /* Ícone de ampliar. */
+    .stage .bigbtn::before {
+      content: "⤢";
+      font-size: 20px;
+      line-height: 1;
+    }
+
+  /* Texto menor no celular. */
+    .stage .info {
+      text-align: center;
+      flex: none;
+      font-size: 10.5px;
+      line-height: 1.25;
+    }
+}
+
+/* ================= 4. Editor: painel de controles e barra de ações ================= */
+
+/* Painel de controles: rola por dentro. */
+.panel {
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  gap: 0;
+  background: var(--panel);
+}
+
+/* Título de cada cartão de configuração. */
+summary {
+  cursor: pointer;
+  list-style: none;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Sem a setinha padrão do navegador. */
+summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Barra de ações, fixa no fim do painel. */
+.bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom,0px));
+}
+
+/* Botões da barra. */
+.bar button {
+  flex: 1;
+}
+
+/* Botão dividido: ação principal + seta que abre o menu. */
+.split {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Parte principal (Baixar PNG). */
+.bar .split-main {
+  border: 0;
+  border-radius: 14px 0 0 14px;
+  font-weight: 800;
+  padding: 12px;
+}
+
+/* Seta que abre o menu de outras ações. */
+.bar .split-arrow {
+  flex: none;
+  width: 46px;
+  border: 0;
+  border-left: 1px solid rgba(0,0,0,.22);
+  border-radius: 0 14px 14px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Desenho da seta. */
+.split-arrow::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(-135deg) translate(-2px,-2px);
+  transition: transform .2s;
+}
+
+/* A seta gira quando o menu está aberto. */
+.split-arrow[aria-expanded="true"]::before {
+  transform: rotate(45deg) translate(-2px,-2px);
+}
+
+/* Menu que abre acima do botão. É "fixed" para o painel (que rola) não cortá-lo; o JavaScript (posicionarMenu) define right, bottom e max-height. */
+.split-menu {
+  position: fixed;
+  min-width: 240px;
+  padding: 6px;
+  border-radius: 16px;
+  z-index: 30;
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 32px rgba(30,45,42,.25);
+  background: var(--card);
+}
+
+/* Itens do menu. */
+.split-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px;
+  background: none;
+}
+
+/* Realce do item sob o mouse. */
+.split-menu button:hover {
+  background: rgba(40,70,64,.1);
+}
+
+@media (max-width:820px) {
+  /* No celular: folga embaixo para a barra de navegação do Android. --sab vem do plugin nativo (getInsets); 20px é um mínimo de segurança para aparelhos em que ele vem zerado. */
+    .bar {
+      flex: none;
+      padding-bottom: calc(10px + max(env(safe-area-inset-bottom,0px),var(--sab,0px),20px));
+    }
+}
+
+/* Topo do painel, com as abas. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--panel);
+}
+
+/* Abas Base | Dock (controle segmentado). */
+.dtabs {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--sc);
+}
+
+/* Cada aba. */
+.dtabs button {
+  flex: 1;
+  border: 0;
+  background: none;
+  color: var(--acc);
+  font-weight: 800;
+  padding: 10px 0;
+  border-radius: 10px;
+}
+
+/* Aba ativa. */
+.dtabs button.on {
+  background: var(--acc);
+  color: var(--acc-fg);
+}
+
+/* Cada seção é um cartão com título. */
+.panel details,
+.panel details[open] {
+  margin: 0 12px 12px;
+  padding: 0 14px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+/* O título do cartão não é clicável: as abas escolhem o que aparece. */
+.panel summary {
+  display: block;
+  pointer-events: none;
+  padding: 14px 0 10px;
+  font-weight: 800;
+}
+
+/* A aba ativa decide os cartões: Base = 1º e 2º; Dock = 3º e 4º. */
+.panel[data-tab="base"] details:nth-of-type(n+3),
+.panel[data-tab="dock"] details:nth-of-type(-n+2) {
+  display: none;
+}
+
+/* Prévia ampliada: esconde os cartões. */
+.panel.hide details {
+  display: none;
+}
+
+/* Cores do botão dividido. */
+.bar .split-main,
+.bar .split-arrow {
+  background: var(--acc);
+  color: var(--acc-fg);
+}
+
+@media (max-width:820px) {
+  /* No celular o painel ocupa o resto da altura, com cantos de cima arredondados. */
+    .panel {
+      position: relative;
+      align-self: stretch;
+      flex: 1 1 0;
+      min-height: 0;
+      max-height: none;
+      border-radius: 18px 18px 0 0;
+    }
+}
+
+/* ================= 5. Telas: início, galeria e configurações ================= */
+
+/* Telas (início, galeria, configurações): cobrem o editor e usam as mesmas cores do tema. Respeitam as áreas seguras (--sat/--sab). */
+.view {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding: max(env(safe-area-inset-top,0px),var(--sat,0px)) 0 max(env(safe-area-inset-bottom,0px),var(--sab,0px));
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity .18s,transform .18s,visibility 0s .18s;
+}
+
+/* Tela visível, com transição suave. */
+.view.on {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+  transition: opacity .18s,transform .18s;
+}
+
+/* Cabeçalho das telas. */
+.vh {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* Marca ou título do cabeçalho. */
+.vh .brand,
+.vh .vt {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+/* Conteúdo que rola, com largura máxima de 720px. */
+.vbody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 16px 24px;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* Cartão de destaque com a prévia do wallpaper atual. */
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: min(46vh,440px);
+  margin: 0 0 14px;
+  padding: 12px;
+  border-radius: 24px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+/* Foto da prévia, sempre inteira. */
+.hero img {
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.3);
+}
+
+/* Estados vazios: texto centralizado. */
+.hero-empty,
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--mute);
+}
+
+/* Estado vazio da prévia (borda tracejada). */
+.hero-empty {
+  width: 100%;
+  height: 100%;
+  border: 2px dashed var(--line);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+/* Título dos estados vazios. */
+.hero-empty b,
+.empty b {
+  color: var(--text);
+  font-size: 17px;
+}
+
+/* Botões principais da tela inicial. */
+.acts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+/* Título de seção com ação à direita. */
+.sec-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0 10px;
+}
+
+/* Texto do título. */
+.sec-h h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+/* Faixa de wallpapers recentes (rola na horizontal). */
+.strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+/* Aviso quando não há recentes. */
+.strip .none {
+  color: var(--mute);
+  padding: 8px 0;
+}
+
+/* Miniatura de um wallpaper recente. */
+.rc {
+  flex: none;
+  width: 76px;
+  aspect-ratio: 9/16;
+  padding: 0;
+  border: 3px solid transparent;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* A miniatura preenche o quadro sem distorcer. */
+.rc img,
+.gi img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Wallpaper atual: borda na cor de destaque. */
+.rc.sel,
+.gi.sel {
+  border-color: var(--acc);
+}
+
+/* Grade responsiva da galeria (colunas de pelo menos 104px). */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill,minmax(104px,1fr));
+  gap: 10px;
+}
+
+/* Item da galeria. */
+.gi {
+  position: relative;
+  aspect-ratio: 9/16;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 3px solid transparent;
+  background: var(--card);
+  cursor: pointer;
+}
+
+/* Marca ✓ (só aparece no item selecionado). */
+.gi .chk {
+  display: none;
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--acc);
+  color: var(--acc-fg);
+  font-style: normal;
+  font-size: 14px;
+  font-weight: 800;
+  place-items: center;
+}
+
+/* Mostra a marca no selecionado. */
+.gi.sel .chk {
+  display: grid;
+}
+
+/* Botão × para remover do histórico. */
+.gi .x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0,0,0,.6);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  min-width: 0;
+}
+
+/* Títulos de grupo nas configurações. */
+.view h4 {
+  margin: 18px 4px 8px;
+  font-size: 13px;
+  color: var(--mute);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+/* Cartão das configurações. */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0 14px;
+  margin-bottom: 12px;
+}
+
+/* Linha clicável dentro de um cartão. */
+.card.list button,
+.rowbtn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  padding: 15px 0;
+  font-weight: 700;
+  border-radius: 0;
+}
+
+/* A última linha não tem traço embaixo. */
+.card.list button:last-child,
+.rowbtn:last-child {
+  border-bottom: 0;
+}
+
+/* Linha de configuração: texto à esquerda, controle à direita (desce se não couber). */
+.srow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+}
+
+/* Texto de apoio. */
+.srow small,
+.about small {
+  display: block;
+  color: var(--mute);
+  margin-top: 2px;
+}
+
+/* Cartão “Sobre”. */
+.about {
+  padding: 14px;
+}
+
+/* Controle segmentado (Auto/Claro/Escuro etc.). */
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--sc);
+}
+
+/* Cada opção. */
+.seg button {
+  border: 0;
+  background: none;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Opção escolhida. */
+.seg button.on {
+  background: var(--acc);
+  color: var(--acc-fg);
+}
+
+/* A primeira linha do cartão não tem traço em cima. */
+.srow:first-child {
+  border-top: 0;
+}
+
+/* O texto ocupa o espaço e pode quebrar linha. */
+.srow>div:first-child {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+/* O controle fica à direita. */
+.srow .seg {
+  margin-left: auto;
+}
+
+/* Linha de ação entre traços. */
+.rowbtn {
+  border-top: 1px solid var(--line);
+}
+
+/* Botões desligados (ex.: “Trocar agora” antes de ligar a troca automática). */
+.rowbtn:disabled,
+.tonal:disabled {
+  opacity: .45;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  /* Quem prefere menos movimento (configuração do sistema) fica sem as animações. */
+    .view,
+    .toast {
+      transition: none;
+    }
+}
+
+/* ================= 6. Avisos e caixas de diálogo ================= */
+
+/* Aviso rápido no pé da tela. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)));
+  transform: translate(-50%,20px);
+  max-width: 90vw;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s,transform .2s;
+  z-index: 80;
+  text-align: center;
+}
+
+/* Aviso visível. */
+.toast.on {
+  opacity: 1;
+  transform: translate(-50%,0);
+}
+
+/* Fundo escurecido da caixa “Aplicar em”. */
+.dlg {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0,0,0,.45);
+}
+
+/* A caixa de diálogo. */
+.dlg-box {
+  width: min(340px,100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 16px 48px rgba(0,0,0,.4);
+}
+
+/* Título da caixa. */
+.dlg-box b {
+  font-size: 17px;
+  margin: 2px 2px 6px;
+}
+
+/* Texto de apoio da caixa (progresso da troca automática). */
+.dlg-box small {
+  color: var(--mute);
+  font-size: 13px;
+  margin: 0 2px;
+}
+
+/* Opções da caixa. */
+.dlg-box button {
+  padding: 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--sc);
+  font-weight: 800;
+}
+
+/* Botão “Cancelar”, discreto. */
+.dlg-box .ghost {
+  background: none;
+  color: var(--mute);
+}
+
+/* ========== Redesign: navegação flutuante Material You ========== */
+.view .vbody { padding-bottom: calc(112px + max(env(safe-area-inset-bottom,0px), var(--sab,0px))); }
+.liquid-nav {
+  position: fixed; z-index: 58;
+  left: 50%; bottom: calc(12px + max(env(safe-area-inset-bottom,0px),var(--sab,0px)));
+  transform: translateX(-50%);
+  width: min(calc(100% - 28px), 560px);
+  display: flex; align-items: center; gap: 3px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  background: color-mix(in srgb, var(--card) 84%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  backdrop-filter: blur(24px) saturate(145%);
+  box-shadow: 0 10px 35px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.12);
+}
+.liquid-nav button {
+  flex: 1; min-width: 0; min-height: 53px;
+  border: 0; border-radius: 999px;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  gap: 1px; padding: 5px 1px;
+  background: transparent; color: var(--mute);
+  transition: background .2s ease, color .2s ease, transform .2s ease;
+}
+.liquid-nav button.active {
+  background: var(--sc); color: var(--acc);
+}
+.liquid-nav .nav-symbol { font-family: system-ui,sans-serif; font-size: 25px; line-height: 1.1; font-weight: 600; }
+.liquid-nav .nav-label { font-size: 10px; font-weight: 800; letter-spacing: -.15px; }
+.liquid-nav button:active { transform: scale(.94); }
+.home-section-title { display: flex; align-items: center; justify-content: space-between; margin: 7px 2px 10px; font-size: 17px; font-weight: 800; }
+.home-section-title small { font-size: 12px; font-weight: 600; color: var(--mute); }
+#v-home .hero { border-radius: 28px; overflow: hidden; }
+
+/* Dock Líquida — animação fluida da navegação Material You.
+   Adicionar ao FINAL de www/style.css. */
+.liquid-nav {
+  --nav-index: 0;
+  isolation: isolate;
+  overflow: hidden;
+  transition: box-shadow .32s ease, background-color .32s ease;
+}
+.liquid-nav::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 7px;
+  bottom: 7px;
+  left: 7px;
+  width: calc((100% - 14px - 12px) / 5);
+  border-radius: 999px;
+  background: var(--sc);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+  transform: translateX(calc(var(--nav-index) * (100% + 3px)));
+  transition: transform .48s cubic-bezier(.2, 1.18, .3, 1), background-color .3s ease;
+  pointer-events: none;
+}
+.liquid-nav:has(button:nth-child(1).active) { --nav-index: 0; }
+.liquid-nav:has(button:nth-child(2).active) { --nav-index: 1; }
+.liquid-nav:has(button:nth-child(3).active) { --nav-index: 2; }
+.liquid-nav:has(button:nth-child(4).active) { --nav-index: 3; }
+.liquid-nav:has(button:nth-child(5).active) { --nav-index: 4; }
+.liquid-nav button { position: relative; z-index: 1; background: transparent !important; transition: color .25s ease, transform .24s ease; }
+.liquid-nav button.active { background: transparent !important; }
+.liquid-nav .nav-symbol { display: block; transition: transform .42s cubic-bezier(.2, 1.5, .35, 1); }
+.liquid-nav button.active .nav-symbol { transform: translateY(-2px) scale(1.12); }
+.liquid-nav button:active .nav-symbol { transform: scale(.88); }
+.liquid-nav .nav-label { transition: opacity .25s ease, transform .3s ease; }
+.liquid-nav button:not(.active) .nav-label { opacity: .65; transform: translateY(1px); }
+.liquid-nav button.active .nav-label { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .liquid-nav, .liquid-nav::before, .liquid-nav button,
+  .liquid-nav .nav-symbol, .liquid-nav .nav-label { transition: none !important; }
+}
+#v-home .acts { gap: 10px; }
+#v-home .acts button { border-radius: 18px; }
+@media (prefers-reduced-motion: reduce) { .liquid-nav button { transition: none; } }
+
+/* Remove o destaque de toque padrão do Android */
+.bottom-nav,
+.bottom-nav *,
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Evita seleção acidental de ícones e textos */
+.bottom-nav {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Mantém o foco visível para navegação por teclado */
+.bottom-nav button:focus-visible,
+.bottom-nav a:focus-visible {
+  outline: 2px solid var(--primary, currentColor);
+  outline-offset: 3px;
+}
+/* Álbuns: usa as cores dinâmicas existentes do Material You */
+.albums-section{margin:0 0 20px}.album-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.album-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}.album-card{border:1px solid var(--outline-variant,rgba(130,130,130,.25));border-radius:20px;padding:8px;background:var(--surface-container,rgba(130,130,130,.12));color:inherit;text-align:left;display:flex;flex-direction:column;gap:5px;overflow:hidden}.album-card img,.album-placeholder{width:100%;aspect-ratio:1.4;object-fit:cover;border-radius:14px}.album-placeholder{display:grid;place-items:center;font-size:32px;background:rgba(130,130,130,.12)}.album-card span:not(.album-placeholder){font-weight:650;overflow-wrap:anywhere}.album-card small{opacity:.7}.album-manage{display:grid;gap:8px;margin:12px 0}.album-manage[hidden],.album-list[hidden]{display:none}.album-choice{display:flex;align-items:center;gap:10px;border-radius:14px;padding:8px;background:rgba(130,130,130,.09)}.album-choice img{width:46px;height:55px;object-fit:cover;border-radius:8px}.album-choice span{flex:1;min-width:0;overflow-wrap:anywhere;font-size:12px}.album-cover{font-size:11px;border-radius:12px;padding:8px;border:1px solid currentColor;background:transparent;color:inherit}.album-cover:disabled{opacity:.45}
