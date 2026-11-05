@@ -1544,3 +1544,75 @@ html.nav-glass-full .liquid-nav::before {
   border-color:rgba(255,255,255,.10);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.11);
 }
+
+/* ===== Ajuste visual vNext: Liquid Glass mais translúcido e menos fosco =====
+   Objetivo: aproximar da referência com refração suave, centro limpo e reflexo fino. */
+html.nav-glass-full .liquid-nav {
+  background: color-mix(in srgb, var(--card) 16%, transparent);
+  border: 1px solid rgba(255,255,255,.14);
+  -webkit-backdrop-filter: blur(6px) saturate(128%) brightness(1.05);
+  backdrop-filter: blur(6px) saturate(128%) brightness(1.05);
+  box-shadow:
+    0 8px 20px rgba(0,0,0,.14),
+    inset 0 1px 0 rgba(255,255,255,.18),
+    inset 0 -1px 0 rgba(255,255,255,.05);
+  overflow: hidden;
+}
+
+html.nav-glass-full .liquid-nav::after {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(56% 120% at 16% 0%, rgba(255,255,255,.18) 0%, rgba(255,255,255,.07) 22%, transparent 58%),
+    radial-gradient(34% 85% at 82% 18%, rgba(255,255,255,.15) 0%, rgba(255,255,255,.05) 26%, transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.025) 18%, transparent 38%, transparent 100%);
+  opacity: .92;
+}
+
+html.nav-glass-full .liquid-nav::before {
+  top: 4px;
+  bottom: 4px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: color-mix(in srgb, var(--sc) 22%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.16),
+    inset 0 -1px 0 rgba(255,255,255,.04),
+    0 2px 6px rgba(0,0,0,.07);
+}
+
+html.nav-glass-full .liquid-nav > button {
+  min-height: 44px;
+}
+
+html.nav-glass-full .liquid-nav > button.active {
+  color: color-mix(in srgb, var(--acc) 88%, white);
+}
+
+html.nav-glass-full .liquid-nav .nav-label {
+  opacity: .92;
+}
+
+@supports (backdrop-filter: url("#navGlassRefraction")) {
+  html.nav-glass-full .liquid-nav {
+    backdrop-filter: url("#navGlassRefraction") blur(5px) saturate(128%) brightness(1.05);
+  }
+}
+
+@supports (-webkit-backdrop-filter: url("#navGlassRefraction")) {
+  html.nav-glass-full .liquid-nav {
+    -webkit-backdrop-filter: url("#navGlassRefraction") blur(5px) saturate(128%) brightness(1.05);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html.nav-glass-full .liquid-nav {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
