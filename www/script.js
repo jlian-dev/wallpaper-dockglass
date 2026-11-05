@@ -1107,23 +1107,17 @@ function desenharGaleria(){
   limparUrls();
   $('gEmpty').hidden = gal.length > 0;
   desenharAlbums();
-  const exibidos = albumAtual === SEM_ALBUM
-    ? imagensSemAlbum(gal, albunsFixos())
-    : albumAtual
-      ? gal.filter(g => (albunsFixos().find(a => a.id === albumAtual)?.ids || []).includes(g.id))
-      : [];
+  const exibidos = albumAtual
+    ? gal.filter(g => (albunsFixos().find(a => a.id === albumAtual)?.ids || []).includes(g.id))
+    : imagensSemAlbum(gal, albunsFixos());
   $('gEmpty').hidden = !!albumAtual || gal.length > 0;
   $('gGrid').innerHTML = exibidos.map(g => `<div class="gi${g.id === curId ? ' sel' : ''}" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""><i class="chk">&#10003;</i><button class="x" type="button" aria-label="Remover do histórico">&times;</button></div>`).join('');
 }
 
-const SEM_ALBUM = '__dock_sem_album__';
 const albunsFixos = () => albums.filter(a => a.type !== 'rotation');
 function imagensSemAlbum(lista, colecao){
   const organizadas = new Set(colecao.flatMap(a => Array.isArray(a.ids) ? a.ids : []));
   return lista.filter(g => !organizadas.has(g.id));
-}
-function capaSemAlbum(lista){
-  return lista.length ? `<img src="${urlDe(lista[0])}" alt="">` : '<span class="album-placeholder">▧</span>';
 }
 let albumPainelAberto = false;
 $('albumSelecionar').addEventListener('click', () => {
@@ -1132,16 +1126,14 @@ $('albumSelecionar').addEventListener('click', () => {
 });
 /* Álbuns organizam referências às imagens da galeria fixa; não duplicam blobs nem alteram DK/FR. */
 function desenharAlbums(){
-  const semAlbum = albumAtual === SEM_ALBUM;
   const atual = albunsFixos().find(a => a.id === albumAtual);
-  if (albumAtual && !atual && !semAlbum) albumAtual = null;
+  if (albumAtual && !atual) albumAtual = null;
   $('albumVoltar').hidden = !albumAtual;
   $('albumEditar').hidden = !atual;
   $('albumExcluir').hidden = !atual;
-  $('albumTitulo').textContent = semAlbum ? 'Sem álbum' : atual ? atual.name : 'Meus álbuns';
+  $('albumTitulo').textContent = atual ? atual.name : 'Meus álbuns';
   $('albumLista').hidden = !!albumAtual;
-  const soltas = imagensSemAlbum(gal, albunsFixos());
-  $('albumLista').innerHTML = `<button type="button" class="album-card" data-album="${SEM_ALBUM}">${capaSemAlbum(soltas)}<span>Sem álbum</span><small>${soltas.length} imagens</small></button>` + albunsFixos().map(a => {
+  $('albumLista').innerHTML = albunsFixos().map(a => {
     const primeiro = gal.find(g => g.id === a.coverId) || gal.find(g => (a.ids || []).includes(g.id));
     return `<button type="button" class="album-card" data-album="${esc(a.id)}">${primeiro ? `<img src="${urlDe(primeiro)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
   }).join('');
@@ -1209,14 +1201,12 @@ function imagensDoSlide(){
   return galRotacao.filter(g => conjunto.has(g.id));
 }
 function desenharAlbunsRotacao(){
-  const semAlbum = albumRotacaoAtual === SEM_ALBUM;
   const atual = albunsRotacao().find(a => a.id === albumRotacaoAtual);
-  if (albumRotacaoAtual && !atual && !semAlbum) albumRotacaoAtual = null;
-  $('rAlbumTitulo').textContent = semAlbum ? 'Sem álbum' : atual ? atual.name : 'Álbuns automáticos';
+  if (albumRotacaoAtual && !atual) albumRotacaoAtual = null;
+  $('rAlbumTitulo').textContent = atual ? atual.name : 'Álbuns automáticos';
   ['rAlbumVoltar','rAlbumEditar','rAlbumExcluir'].forEach(id => $(id).hidden = !atual);
   $('rAlbumLista').hidden = !!atual;
-  const soltas = imagensSemAlbum(galRotacao, albunsRotacao());
-  $('rAlbumLista').innerHTML = `<button type="button" class="album-card" data-ralbum="${SEM_ALBUM}">${capaSemAlbum(soltas)}<span>Sem álbum</span><small>${soltas.length} imagens</small></button>` + albunsRotacao().map(a => {
+  $('rAlbumLista').innerHTML = albunsRotacao().map(a => {
     const rec = galRotacao.find(g => g.id === a.coverId && (a.ids || []).includes(g.id)) || galRotacao.find(g => (a.ids || []).includes(g.id));
     return `<button type="button" class="album-card" data-ralbum="${esc(a.id)}">${rec ? `<img src="${urlDe(rec)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
   }).join('');
@@ -1278,11 +1268,9 @@ function desenharGaleriaRotacao(){
   limparUrls();
   desenharAlbunsRotacao();
 
-  const exibidos = albumRotacaoAtual === SEM_ALBUM
-    ? imagensSemAlbum(galRotacao, albunsRotacao())
-    : albumRotacaoAtual
-      ? galRotacao.filter(g => (albunsRotacao().find(a => a.id === albumRotacaoAtual)?.ids || []).includes(g.id))
-      : [];
+  const exibidos = albumRotacaoAtual
+    ? galRotacao.filter(g => (albunsRotacao().find(a => a.id === albumRotacaoAtual)?.ids || []).includes(g.id))
+    : imagensSemAlbum(galRotacao, albunsRotacao());
   $('rEmpty').hidden = !!albumRotacaoAtual || galRotacao.length > 0;
   $('rGrid').innerHTML = exibidos.map(g => `<div class="gi" data-id="${esc(g.id)}"><img src="${urlDe(g)}" alt=""><button class="x" type="button" aria-label="Remover da galeria automática">&times;</button></div>`).join('');
 }
