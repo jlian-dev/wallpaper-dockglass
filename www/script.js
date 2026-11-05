@@ -841,11 +841,12 @@ function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add(
 const DB = (() => {
   let dbp;
   const abrir = () => dbp || (dbp = new Promise((ok, erro) => {
-    const r = indexedDB.open('dockliquida', 2);
+    const r = indexedDB.open('dockliquida', 3);
     r.onupgradeneeded = () => {
       const db = r.result;
       if (!db.objectStoreNames.contains('wallpapers')) db.createObjectStore('wallpapers', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('rotationWallpapers')) db.createObjectStore('rotationWallpapers', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('albums')) db.createObjectStore('albums', { keyPath: 'id' });
     };
     r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error);
   }));
@@ -862,12 +863,15 @@ const DB = (() => {
     allRotation: () => tx('readonly', s => s.getAll(), 'rotationWallpapers'),
     putRotation: rec => tx('readwrite', s => s.put(rec), 'rotationWallpapers'),
     delRotation: id => tx('readwrite', s => s.delete(id), 'rotationWallpapers'),
-    clearRotation: () => tx('readwrite', s => s.clear(), 'rotationWallpapers')
+    clearRotation: () => tx('readwrite', s => s.clear(), 'rotationWallpapers'),
+    allAlbums: () => tx('readonly', s => s.getAll(), 'albums'),
+    putAlbum: rec => tx('readwrite', s => s.put(rec), 'albums'),
+    delAlbum: id => tx('readwrite', s => s.delete(id), 'albums')
   };
 })();
 
 const LIMITE = 100;                                  // máximo de imagens no histórico
-let gal = [], galRotacao = [], curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
+let gal = [], galRotacao = [], albums = [], albumAtual = null, curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
 try { FR = JSON.parse(localStorage.getItem('dockFrames') || '{}'); } catch (e) {}
 const salvarFR = () => { try { localStorage.setItem('dockFrames', JSON.stringify(FR)); } catch (e) {} };
 
@@ -890,7 +894,8 @@ async function carregarGaleria(){
   try {
     gal = (await DB.all()).sort((a, b) => b.added - a.added);
     galRotacao = (await DB.allRotation()).sort((a, b) => b.added - a.added);
-  } catch (e) { gal = []; galRotacao = []; toast('Não foi possível ler as galerias.'); }
+    albums = await DB.allAlbums();
+  } catch (e) { gal = []; galRotacao = []; albums = []; toast('Não foi possível ler as galerias.'); }
 }
 
 /* Identificador = hash dos primeiros 256 KB + tamanho: a mesma foto escolhida de novo não duplica */
@@ -1065,7 +1070,9 @@ async function remover(id){
   try { await DB.del(id); } catch (e) {}
   delete FR[id]; delete DK[id]; salvarFR(); salvarDK();
   if (id === curId){ curId = null; try { localStorage.removeItem('dockCurrent'); } catch (e) {} }
-  await carregarGaleria(); redesenharTelas(); toast('Removida do histórico.');
+  await carregarGaleria();
+  for (const a of albums) if ((a.ids || []).includes(id)) { a.ids = a.ids.filter(v => v !== id); if (a.coverId === id) a.coverId = a.ids[0] || null; await DB.putAlbum(a).catch(() => {}); }
+  redesenharTelas(); toast('Removida do histórico.');
 }
 
 /* Salvar o enquadramento enquanto ele é ajustado (aproveita o gancho de salvamento que já existe) */
@@ -1090,8 +1097,67 @@ function desenharHome(){
 function desenharGaleria(){
   limparUrls();
   $('gEmpty').hidden = gal.length > 0;
-  $('gGrid').innerHTML = gal.map(g => `<div class="gi${g.id === curId ? ' sel' : ''}" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""><i class="chk">&#10003;</i><button class="x" type="button" aria-label="Remover do histórico">&times;</button></div>`).join('');
+  desenharAlbums();
+  const exibidos = albumAtual ? gal.filter(g => (albums.find(a => a.id === albumAtual)?.ids || []).includes(g.id)) : gal;
+  $('gEmpty').hidden = exibidos.length > 0 || !!albumAtual;
+  $('gGrid').innerHTML = exibidos.map(g => `<div class="gi${g.id === curId ? ' sel' : ''}" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""><i class="chk">&#10003;</i><button class="x" type="button" aria-label="Remover do histórico">&times;</button></div>`).join('');
 }
+
+/* Álbuns organizam referências às imagens da galeria fixa; não duplicam blobs nem alteram DK/FR. */
+function desenharAlbums(){
+  const atual = albums.find(a => a.id === albumAtual);
+  if (albumAtual && !atual) albumAtual = null;
+  $('albumVoltar').hidden = !albumAtual;
+  $('albumEditar').hidden = !albumAtual;
+  $('albumExcluir').hidden = !albumAtual;
+  $('albumTitulo').textContent = atual ? atual.name : 'Meus álbuns';
+  $('albumLista').hidden = !!albumAtual;
+  $('albumLista').innerHTML = albums.map(a => {
+    const primeiro = gal.find(g => g.id === a.coverId) || gal.find(g => (a.ids || []).includes(g.id));
+    return `<button type="button" class="album-card" data-album="${esc(a.id)}">${primeiro ? `<img src="${urlDe(primeiro)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
+  }).join('');
+  $('albumGerenciar').hidden = !albumAtual;
+  if (atual){
+    $('albumGerenciar').innerHTML = gal.map(g => `<label class="album-choice"><input type="checkbox" data-photo="${esc(g.id)}" ${(atual.ids || []).includes(g.id) ? 'checked' : ''}><img src="${urlDe(g)}" alt=""><span>${esc(g.name)}</span><button type="button" class="album-cover" data-cover="${esc(g.id)}" ${atual.coverId === g.id ? 'disabled' : ''}>${atual.coverId === g.id ? 'Capa atual' : 'Usar capa'}</button></label>`).join('') || '<p class="info">Adicione imagens à galeria para organizar este álbum.</p>';
+  }
+}
+$('albumCriar').addEventListener('click', async () => {
+  const name = prompt('Nome do novo álbum:')?.trim(); if (!name) return;
+  const a = {id: 'album-' + Date.now() + '-' + Math.random().toString(36).slice(2,7), name: name.slice(0,60), ids: [], coverId: null};
+  try { await DB.putAlbum(a); albums.push(a); albumAtual = a.id; desenharGaleria(); toast('Álbum criado.'); }
+  catch(e){ toast('Não foi possível criar o álbum.'); }
+});
+$('albumLista').addEventListener('click', e => {
+  const b = e.target.closest('[data-album]'); if (!b) return;
+  albumAtual = b.dataset.album; desenharGaleria();
+});
+$('albumVoltar').addEventListener('click', () => {albumAtual = null; desenharGaleria();});
+$('albumEditar').addEventListener('click', async () => {
+  const a = albums.find(a => a.id === albumAtual); if (!a) return;
+  const name = prompt('Renomear álbum:', a.name)?.trim(); if (!name) return;
+  a.name = name.slice(0,60);
+  try { await DB.putAlbum(a); desenharGaleria(); toast('Álbum renomeado.'); } catch(e){toast('Erro ao renomear álbum.');}
+});
+$('albumExcluir').addEventListener('click', async () => {
+  const a = albums.find(a => a.id === albumAtual); if (!a || !confirm(`Excluir o álbum "${a.name}"? As imagens serão mantidas.`)) return;
+  try { await DB.delAlbum(a.id); albums = albums.filter(v => v.id !== a.id); albumAtual = null; desenharGaleria(); toast('Álbum excluído; imagens preservadas.'); }
+  catch(e){toast('Não foi possível excluir o álbum.');}
+});
+$('albumGerenciar').addEventListener('change', async e => {
+  const cb = e.target.closest('input[data-photo]'); if (!cb) return;
+  const a = albums.find(a => a.id === albumAtual); if (!a) return;
+  const ids = new Set(a.ids || []); cb.checked ? ids.add(cb.dataset.photo) : ids.delete(cb.dataset.photo);
+  a.ids = [...ids]; if (!ids.has(a.coverId)) a.coverId = a.ids[0] || null;
+  try { await DB.putAlbum(a); desenharGaleria(); } catch(err){toast('Erro ao salvar álbum.');}
+});
+$('albumGerenciar').addEventListener('click', async e => {
+  const b = e.target.closest('[data-cover]'); if (!b) return;
+  const a = albums.find(a => a.id === albumAtual); if (!a) return;
+  if (!(a.ids || []).includes(b.dataset.cover)){toast('Marque a imagem antes de definir a capa.'); return;}
+  a.coverId = b.dataset.cover;
+  try {await DB.putAlbum(a); desenharGaleria(); toast('Capa atualizada.');}catch(err){toast('Erro ao salvar capa.');}
+});
+
 function desenharGaleriaRotacao(){
   limparUrls();
   $('rEmpty').hidden = galRotacao.length > 0;
