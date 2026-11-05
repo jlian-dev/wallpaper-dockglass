@@ -1309,3 +1309,40 @@ summary::-webkit-details-marker {
 @media (prefers-reduced-motion: reduce) {
   .rotation-import-trigger, .rotation-import-arrow { transition: none; }
 }
+
+/* Refinamento minimalista: galeria automática */
+#v-rotation-gallery .vbody { padding-top: 12px; }
+#v-rotation-gallery .rotation-import { margin: 4px 0 24px; border-radius:20px; }
+#v-rotation-gallery .rotation-import-trigger { min-height:64px; padding:10px 14px; }
+#v-rotation-gallery .rotation-import-icon { flex-basis:40px; height:40px; border-radius:13px; font-size:21px; }
+#v-rotation-gallery .rotation-import-copy strong { font-size:14px; font-weight:750; }
+#v-rotation-gallery .slide-albums { margin:18px 0 20px; padding:16px; border-radius:22px; }
+#v-rotation-gallery .slide-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+#v-rotation-gallery .slide-head b { font-size:16px; }
+#v-rotation-gallery .slide-head small { font-size:12px; color:var(--mute); }
+#v-rotation-gallery .slide-album-list { margin:12px 0 8px; gap:5px; }
+#v-rotation-gallery .slide-album-option { min-height:48px; padding:8px 10px; background:color-mix(in srgb,var(--sc) 28%,transparent); border-radius:13px; }
+#v-rotation-gallery .slide-album-option span { font-size:13px; }
+#v-rotation-gallery .slide-album-option small { font-size:11px; white-space:nowrap; }
+#v-rotation-gallery #rSlideInfo { display:block; color:var(--mute); font-size:11px; margin-top:6px; }
+/* Vidro fosco com brilho/refração visual discreta; preserva indicador móvel e Material You */
+.liquid-nav {
+  border:1px solid color-mix(in srgb,var(--text) 24%,transparent);
+  background:color-mix(in srgb,var(--card) 76%,transparent);
+  -webkit-backdrop-filter:blur(42px) saturate(125%) contrast(105%);
+  backdrop-filter:blur(42px) saturate(125%) contrast(105%);
+  box-shadow:0 12px 32px rgba(0,0,0,.19),inset 0 1px 0 rgba(255,255,255,.34),inset 0 -1px 0 rgba(255,255,255,.12);
+}
+.liquid-nav::after {
+  inset:2px 8px auto;
+  height:30%;
+  background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.045) 60%,transparent);
+}
+.liquid-nav::before {
+  background:color-mix(in srgb,var(--sc) 56%,transparent);
+  border-color:color-mix(in srgb,var(--text) 17%,transparent);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 3px 10px rgba(0,0,0,.09);
+}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+  .liquid-nav { background:var(--card); }
+}

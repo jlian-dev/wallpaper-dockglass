@@ -1220,7 +1220,7 @@ function desenharAlbunsRotacao(){
   }
   const ids = selecionadosRotacao();
   $('rSlideLista').innerHTML = albunsRotacao().map(a => `<label class="slide-album-option"><input type="checkbox" data-slide="${esc(a.id)}" ${ids.includes(a.id) ? 'checked' : ''}><span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></label>`).join('') || '<p class="info">Crie álbuns para escolher a apresentação.</p>';
-  $('rSlideInfo').textContent = ids.length ? `${ids.length}/2 álbuns selecionados · ${imagensDoSlide().length} wallpapers` : 'Usando todos os wallpapers automáticos';
+  $('rSlideInfo').textContent = ids.length ? `${ids.length}/2 álbuns selecionados · ${imagensDoSlide().length} wallpapers` : 'Todos os wallpapers';
 }
 $('rAlbumCriar').addEventListener('click', async () => {
   const name = prompt('Nome do álbum automático:')?.trim(); if (!name) return;
