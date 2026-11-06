@@ -66,8 +66,8 @@ const SLIDERS = [['blur','Desfoque do vidro',0,60],
                  ['ior','Índice de refração',1,2,0.01],['scale','Escala da refração',0,150],
                  ['chroma','Aberração cromática',0,30],['shine','Brilho especular',0,100],['angle','Ângulo da luz',-180,180]];
 
-const cv = document.getElementById('cv');       // elemento <canvas>
-const ctx = cv.getContext('2d');                // "caneta" para desenhar nele
+let cv = document.getElementById('cv');       // elemento <canvas>
+let ctx = cv.getContext('2d');                // "caneta" para desenhar nele
 let wall = makeDefaultWall();                   // imagem de fundo (começa com um degradê)
 
 /* =====================================================================
@@ -115,7 +115,7 @@ function applySize(){
    fixed = true ignora zoom e enquadramento (usado no print). */
 /* Cache do fundo: papel de parede já cortado e desfocado fica guardado num canvas
    e só é refeito quando algo dele muda (assim arrastar a dock não recalcula o desfoque). */
-const baseCv = document.createElement('canvas');
+let baseCv = document.createElement('canvas');
 let baseKey = '', wallId = 0, glassKey = '', GD = null, GW = 0;
 const OUT = { w: 0, h: 0 };                     // tamanho real de saída (o canvas visível pode ser menor)
 const COL = new Float32Array(3);                // cor do pixel reutilizada (evita criar um array por pixel)
@@ -209,8 +209,10 @@ function render(){
   drawDock();                                    // 2) dock de vidro
   // Aviso de qualidade: escala > 1 significa que a imagem original é menor que o quadro e foi ampliada
   const sc = Math.max(OUT.w/sizeOf(wall)[0], OUT.h/sizeOf(wall)[1]) * state.zoom/100;
-  document.getElementById('info').textContent = OUT.w + ' × ' + OUT.h + ' px (prévia a ' + Math.round(W/OUT.w*100) + '%, o PNG sai em 100%) · ' +
-    (sc > 1.001 ? 'papel de parede ampliado ' + sc.toFixed(2) + '×: pode perder nitidez' : 'sem ampliação, nitidez total');
+  if (!renderizandoWallpaperAutomatico) {
+    document.getElementById('info').textContent = OUT.w + ' × ' + OUT.h + ' px (prévia a ' + Math.round(W/OUT.w*100) + '%, o PNG sai em 100%) · ' +
+      (sc > 1.001 ? 'papel de parede ampliado ' + sc.toFixed(2) + '×: pode perder nitidez' : 'sem ampliação, nitidez total');
+  }
   if (!renderizandoWallpaperAutomatico) saveSoon();
 }
 
@@ -1588,26 +1590,65 @@ const paraBase64 = blob => new Promise(ok => { const r = new FileReader(); r.onl
 const mostrarProgresso = (sub) => { $('progS').textContent = sub; $('progDlg').hidden = false; };
 const esconderProgresso = () => { $('progDlg').hidden = true; };
 
-/* Desenha UM wallpaper da galeria automática com a Dock atual, em tamanho real (JPEG), sem mexer no que está aberto no editor. */
+/* Prepara a imagem para a rotação em um canvas FORA da tela.
+   Antes a geração usava o canvas #cv do editor e alternava wall/draw(true)/draw(),
+   causando piscadas de outro wallpaper e saltos temporários da prévia para 100%.
+   O desenho é síncrono: trocamos o contexto apenas durante essa chamada e restauramos
+   antes de qualquer await, sem mexer na imagem nem nas dimensões do editor visível. */
 async function renderizarItem(rec, dockCompartilhada){
   const bmp = await createImageBitmap(rec.blob);
-  const salvo = { wall, zoom: state.zoom, panX: state.panX, panY: state.panY, dock: Object.fromEntries(CAMPOS_DOCK.map(k => [k, state[k]])) };
-  // Desenhar arquivos da rotação não é uma edição do wallpaper aberto.
-  clearTimeout(frT);
-  renderizandoWallpaperAutomatico = true;
+  const exportCv = document.createElement('canvas');
+  const exportCtx = exportCv.getContext('2d');
+  if (!exportCtx) { if (bmp.close) bmp.close(); throw new Error('Canvas de exportação indisponível.'); }
+
+  // Os caches também são separados: o cálculo em resolução cheia não deve
+  // substituir o fundo, o vidro ou a forma usados pelo editor.
+  const salvo = {
+    cv, ctx, baseCv, baseKey, glassKey, GD, GW, wall, wallId,
+    renderizandoWallpaperAutomatico,
+    zoom: state.zoom, panX: state.panX, panY: state.panY,
+    dock: Object.fromEntries(CAMPOS_DOCK.map(k => [k, state[k]])),
+    field: { ...FIELD }
+  };
   try {
-    wall = bmp; wallId++;                                          // wallId invalida o cache do fundo e do vidro
-    const fr = FR[rec.id] || { zoom: 100, panX: 0, panY: 0 };     // cada wallpaper usa o enquadramento guardado dele
+    cv = exportCv;
+    ctx = exportCtx;
+    baseCv = document.createElement('canvas');
+    baseKey = ''; glassKey = ''; GD = null; GW = 0;
+    FIELD.key = ''; FIELD.W = 0; FIELD.H = 0;
+    FIELD.A = FIELD.NX = FIELD.NY = FIELD.DISP = FIELD.HL0 = null;
+    FIELD.img = FIELD.cvs = null;
+
+    wall = bmp; wallId++;
+    const fr = FR[rec.id] || { zoom: 100, panX: 0, panY: 0 };
     state.zoom = fr.zoom; state.panX = fr.panX; state.panY = fr.panY;
     const dockDaImagem = PREF.dockIndividual ? (DK[rec.id] || dockCompartilhada) : dockCompartilhada;
     aplicarDock(dockDaImagem);
-    draw(true);
-    return await new Promise(ok => cv.toBlob(ok, 'image/jpeg', .95));
-  } finally {                                                      // devolve o editor ao estado anterior
-    wall = salvo.wall; wallId++; state.zoom = salvo.zoom; state.panX = salvo.panX; state.panY = salvo.panY;
-    CAMPOS_DOCK.forEach(k => state[k] = salvo.dock[k]);
-    renderizandoWallpaperAutomatico = false;
-    draw(); if (bmp.close) bmp.close();
+    renderizandoWallpaperAutomatico = true;
+    // Usa a função de desenho original, sem fitPhone(), ResizeObserver ou repaint visível.
+    _draw(true);
+  } catch (e) {
+    if (bmp.close) bmp.close();
+    throw e;
+  } finally {
+    cv = salvo.cv; ctx = salvo.ctx; baseCv = salvo.baseCv;
+    baseKey = salvo.baseKey; glassKey = salvo.glassKey;
+    GD = salvo.GD; GW = salvo.GW; wall = salvo.wall; wallId = salvo.wallId;
+    state.zoom = salvo.zoom; state.panX = salvo.panX; state.panY = salvo.panY;
+    CAMPOS_DOCK.forEach(k => { state[k] = salvo.dock[k]; });
+    Object.assign(FIELD, salvo.field);
+    renderizandoWallpaperAutomatico = salvo.renderizandoWallpaperAutomatico;
+  }
+
+  // A conversão do canvas separado em JPEG pode ser assíncrona: os dados
+  // do editor já foram restaurados, portanto não há flicker entre frames.
+  try {
+    return await new Promise((ok, falha) => {
+      exportCv.toBlob(blob => blob ? ok(blob) : falha(new Error('Falha ao gerar JPEG da troca automática.')), 'image/jpeg', .95);
+    });
+  } finally {
+    if (bmp.close) bmp.close();
+    exportCv.width = 0; exportCv.height = 0;
   }
 }
 async function gerarRotacao(mostrarAviso = false){
