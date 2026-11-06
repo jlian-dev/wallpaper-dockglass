@@ -1,0 +1,95 @@
+name: Testar APK (instala ao lado do oficial)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  teste:
+    name: Compilar APK de teste
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Conferir chave de assinatura
+        shell: bash
+        run: |
+          if [[ -z "$KEYSTORE_B64" || -z "$KEYSTORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::Configure KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS e KEY_PASSWORD nos Secrets do repositório. A mesma chave permite atualizar futuras versões de teste sem desinstalar."
+            exit 1
+          fi
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar projeto Android
+        run: npx cap add android
+
+      - name: Aplicar plugins e ajustes nativos existentes
+        run: node patch-android.js
+
+      - name: Sincronizar app e plugins
+        run: npx cap sync android
+
+      - name: Configurar identificador separado e número da compilação
+        run: node scripts/configure-test-build.js
+
+      - name: Gerar ícones do projeto
+        run: npx --yes @capacitor/assets generate --android
+
+      - name: Adicionar ícone monocromático
+        run: node scripts/add-monochrome.js
+
+      - name: Compilar o APK de teste
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Assinar com a chave já existente no projeto
+        shell: bash
+        run: |
+          mkdir -p dist
+          echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/keystore.jks"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          "$BT/zipalign" -p -f 4 \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            "$RUNNER_TEMP/teste-alinhado.apk"
+          "$BT/apksigner" sign \
+            --ks "$RUNNER_TEMP/keystore.jks" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --out "dist/DockLiquida-TESTE-${GITHUB_RUN_NUMBER}.apk" \
+            "$RUNNER_TEMP/teste-alinhado.apk"
+          "$BT/apksigner" verify --verbose --print-certs \
+            "dist/DockLiquida-TESTE-${GITHUB_RUN_NUMBER}.apk"
+
+      - name: Disponibilizar APK para download (sem publicar Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DockLiquida-TESTE-${{ github.run_number }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 14
