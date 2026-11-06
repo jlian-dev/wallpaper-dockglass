@@ -1372,6 +1372,42 @@ function ir(nome, substituir){
 const voltar = () => { if (history.length > 1) history.back(); else ir('home', true); };
 addEventListener('popstate', e => mostrar((e.state && e.state.v) || 'home'));
 
+/* Voltar nativo do Android (gesto lateral e botão). Mantido no script principal
+   para não desaparecer quando o editor for atualizado. */
+let ultimaTentativaSair = 0;
+window.dockOnAndroidBack = function () {
+  const progresso = $('progDlg');
+  if (progresso && !progresso.hidden) return 'stay';
+
+  const destino = $('alvoDlg');
+  if (destino && !destino.hidden) {
+    const cancelar = destino.querySelector('[data-alvo=""]');
+    if (cancelar) cancelar.click();
+    else destino.hidden = true;
+    return 'stay';
+  }
+
+  if (vista !== 'home') {
+    ultimaTentativaSair = 0;
+    // Se o histórico estiver inconsistente, retornar à tela inicial em vez de sair.
+    if (history.length > 1 && history.state && history.state.v) {
+      history.back();
+    } else {
+      ir('home', true);
+    }
+    return 'stay';
+  }
+
+  const agora = Date.now();
+  if (ultimaTentativaSair && agora - ultimaTentativaSair <= 2200) {
+    ultimaTentativaSair = 0;
+    return 'exit';
+  }
+  ultimaTentativaSair = agora;
+  toast('Pressione Voltar novamente para sair.');
+  return 'stay';
+};
+
 document.addEventListener('click', e => {           // botões de navegação de todas as telas
   const go = e.target.closest('[data-go]'), back = e.target.closest('[data-back]');
   if (go) ir(go.dataset.go);
