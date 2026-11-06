@@ -1545,74 +1545,52 @@ html.nav-glass-full .liquid-nav::before {
   box-shadow:inset 0 1px 0 rgba(255,255,255,.11);
 }
 
-/* ===== Ajuste visual vNext: Liquid Glass mais translúcido e menos fosco =====
-   Objetivo: aproximar da referência com refração suave, centro limpo e reflexo fino. */
-html.nav-glass-full .liquid-nav {
-  background: color-mix(in srgb, var(--card) 16%, transparent);
-  border: 1px solid rgba(255,255,255,.14);
-  -webkit-backdrop-filter: blur(6px) saturate(128%) brightness(1.05);
-  backdrop-filter: blur(6px) saturate(128%) brightness(1.05);
-  box-shadow:
-    0 8px 20px rgba(0,0,0,.14),
-    inset 0 1px 0 rgba(255,255,255,.18),
-    inset 0 -1px 0 rgba(255,255,255,.05);
-  overflow: hidden;
-}
 
-html.nav-glass-full .liquid-nav::after {
-  content: "";
-  display: block;
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  background:
-    radial-gradient(56% 120% at 16% 0%, rgba(255,255,255,.18) 0%, rgba(255,255,255,.07) 22%, transparent 58%),
-    radial-gradient(34% 85% at 82% 18%, rgba(255,255,255,.15) 0%, rgba(255,255,255,.05) 26%, transparent 62%),
-    linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.025) 18%, transparent 38%, transparent 100%);
-  opacity: .92;
+/* ===== Editor: mais espaço para edição, ações reunidas no topo ===== */
+.editor-topbar { gap: 8px; z-index: 10; }
+.editor-topbar .dtabs { min-width: 0; }
+.editor-actions-wrap { position: relative; flex: 0 0 auto; }
+.editor-more-btn {
+  display: grid; place-items: center;
+  width: 46px; height: 46px; padding: 0;
+  color: var(--text); background: var(--sc);
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.09);
+  -webkit-tap-highlight-color: transparent;
 }
-
-html.nav-glass-full .liquid-nav::before {
-  top: 4px;
-  bottom: 4px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: color-mix(in srgb, var(--sc) 22%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.16),
-    inset 0 -1px 0 rgba(255,255,255,.04),
-    0 2px 6px rgba(0,0,0,.07);
+.editor-more-btn[aria-expanded="true"] { background: var(--acc); color: var(--acc-fg); }
+.editor-more-btn:active { transform: scale(.96); }
+.editor-more-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.editor-menu {
+  position: fixed; z-index: 90;
+  width: min(286px, calc(100vw - 20px));
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 16px 38px rgba(0,0,0,.27);
 }
-
-html.nav-glass-full .liquid-nav > button {
-  min-height: 44px;
+.editor-menu[hidden] { display: none !important; }
+.editor-menu button:not([hidden]) {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 11px; min-height: 43px;
+  color: var(--text); font: inherit; font-size: 14px;
 }
-
-html.nav-glass-full .liquid-nav > button.active {
-  color: color-mix(in srgb, var(--acc) 88%, white);
-}
-
-html.nav-glass-full .liquid-nav .nav-label {
-  opacity: .92;
-}
-
-@supports (backdrop-filter: url("#navGlassRefraction")) {
-  html.nav-glass-full .liquid-nav {
-    backdrop-filter: url("#navGlassRefraction") blur(5px) saturate(128%) brightness(1.05);
-  }
-}
-
-@supports (-webkit-backdrop-filter: url("#navGlassRefraction")) {
-  html.nav-glass-full .liquid-nav {
-    -webkit-backdrop-filter: url("#navGlassRefraction") blur(5px) saturate(128%) brightness(1.05);
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  html.nav-glass-full .liquid-nav {
-    background: var(--card);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
+.editor-menu button:active { background: var(--sc); }
+.editor-menu button[hidden] { display: none !important; }
+.ui-icon { display: inline-block; width: 21px; height: 21px; flex: 0 0 auto; vertical-align: middle; }
+.editor-menu .ui-icon { width: 20px; height: 20px; color: var(--acc); }
+.editor-more-btn .ui-icon { width: 23px; height: 23px; }
+/* Sem barra de exportação fixa — o painel usa toda a área vertical livre. */
+.panel > .bar { display: none !important; }
+.stage .ebtn .ui-icon, .view .ib .ui-icon { width: 22px; height: 22px; }
+.stage .bigbtn .ui-icon { width: 21px; height: 21px; }
+.stage .bigbtn::before { content: none !important; }
+.stage.big .bigbtn::before { content: none !important; }
+button:has(> .ui-icon > path) { -webkit-tap-highlight-color: transparent; }
+button:has(> .ui-icon) > span:not(.ui-icon) { vertical-align: middle; }
+button#albumCriar, button#rAlbumCriar, button#gAdd, button#rAdd { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+button#albumCriar .ui-icon, button#rAlbumCriar .ui-icon, button#gAdd .ui-icon, button#rAdd .ui-icon { width: 17px; height: 17px; }

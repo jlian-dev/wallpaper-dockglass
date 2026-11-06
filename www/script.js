@@ -565,7 +565,8 @@ const stageEl = document.querySelector('.stage'), bigBtn = document.getElementBy
 bigBtn.addEventListener('click', () => {
   const big = stageEl.classList.toggle('big');
   panel.classList.toggle('hide', big);           // ampliado: esconde abas e seções, fica só a barra de ações
-  bigBtn.textContent = big ? 'Reduzir prévia' : 'Ampliar prévia';
+  bigBtn.setAttribute('aria-label', big ? 'Reduzir prévia' : 'Ampliar prévia');
+  bigBtn.title = big ? 'Reduzir prévia' : 'Ampliar prévia';
   schedule();                                   // redesenha na nova resolução de prévia
 });
 
@@ -683,33 +684,50 @@ function salvarProjeto(){                                      // guarda todos o
   return entregar(new Blob([JSON.stringify(proj, null, 2)], { type: 'application/json' }), 'projeto-dock-liquida.json');
 }
 
-/* Botão dividido: o principal baixa o PNG; a seta abre as outras ações */
-const arrow = document.getElementById('splitArrow'), menu = document.getElementById('splitMenu');
-const fecharMenu = () => { menu.hidden = true; arrow.setAttribute('aria-expanded', 'false'); };
-document.getElementById('splitMain').addEventListener('click', () => { fecharMenu(); baixarPng(); });
-/* O menu abre para cima, ancorado na seta. Ele é "fixed" (relativo à tela) porque o painel rola por dentro
-   e cortaria tudo o que passasse do topo dele. Se não couber, o próprio menu rola. */
-function posicionarMenu(){
-  const r = arrow.getBoundingClientRect();
-  Object.assign(menu.style, {
-    right: Math.max(8, innerWidth - r.right) + 'px',      // alinhado à direita da seta
-    bottom: (innerHeight - r.top + 8) + 'px',             // logo acima do botão
-    maxHeight: Math.max(140, r.top - 16) + 'px', overflowY: 'auto'
-  });
+/* Menu de ações do editor: quatro funções num botão compacto junto das abas. */
+const editorMoreBtn = document.getElementById('editorMoreBtn');
+const menu = document.getElementById('splitMenu');
+function fecharMenu(){
+  menu.hidden = true;
+  editorMoreBtn.setAttribute('aria-expanded', 'false');
 }
-arrow.addEventListener('click', e => {
-  e.stopPropagation(); menu.hidden = !menu.hidden;
-  arrow.setAttribute('aria-expanded', String(!menu.hidden));
-  if (!menu.hidden) posicionarMenu();
+/* Menu fixed para não ser cortado pela rolagem interna do painel. */
+function posicionarMenu(){
+  const r = editorMoreBtn.getBoundingClientRect();
+  const largura = Math.min(286, innerWidth - 20);
+  const alturaDisponivel = innerHeight - r.bottom - 20;
+  menu.style.width = largura + 'px';
+  menu.style.right = Math.max(10, innerWidth - r.right) + 'px';
+  menu.style.left = 'auto';
+  menu.style.top = (alturaDisponivel >= 205 ? r.bottom + 8 : Math.max(10,r.top - 208)) + 'px';
+  menu.style.bottom = 'auto';
+  menu.style.maxHeight = Math.max(120, alturaDisponivel >= 205 ? alturaDisponivel : r.top - 20) + 'px';
+  menu.style.overflowY = 'auto';
+}
+editorMoreBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (!menu.hidden){ fecharMenu(); return; }
+  menu.hidden = false;
+  editorMoreBtn.setAttribute('aria-expanded', 'true');
+  posicionarMenu();
 });
+document.addEventListener('click', e => {
+  if (!e.target.closest('.editor-actions-wrap')) fecharMenu();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !menu.hidden){ fecharMenu(); editorMoreBtn.focus(); }
+});
+panel.addEventListener('scroll', () => { if (!menu.hidden) fecharMenu(); }, {passive:true});
 addEventListener('resize', () => { if (!menu.hidden) posicionarMenu(); });
-document.addEventListener('click', e => { if (!document.getElementById('split').contains(e.target)) fecharMenu(); });
 menu.addEventListener('click', e => {
-  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const b = e.target.closest('button[data-act]');
+  if (!b) return;
   fecharMenu();
-  ({ apply: aplicarWallpaper, hires: baixarAltaRes, project: salvarProjeto, open: () => document.getElementById('fProj').click() })[b.dataset.act]();
+  const actions = { apply: aplicarWallpaper, hires: baixarAltaRes, project: salvarProjeto,
+    open: () => document.getElementById('fProj').click() };
+  actions[b.dataset.act]?.();
 });
-if (DO) document.getElementById('actApply').hidden = false;   // "Aplicar" só existe no APK
+if (DO) document.getElementById('actApply').hidden = false;
 
 /* Abrir um projeto salvo (.json): restaura todos os ajustes e o tamanho de saída */
 document.getElementById('fProj').addEventListener('change', async e => {
@@ -1329,44 +1347,6 @@ function ir(nome, substituir){
 const voltar = () => { if (history.length > 1) history.back(); else ir('home', true); };
 addEventListener('popstate', e => mostrar((e.state && e.state.v) || 'home'));
 
-/* Voltar do Android: gesto lateral e botão de 3 teclas seguem a navegação do app.
-   Na tela inicial, dois Voltar em até 2,2 segundos encerram o aplicativo. */
-let ultimoVoltarParaSair = 0;
-window.dockOnAndroidBack = function () {
-  // Durante uma operação que não pode ser interrompida, não fecha o app.
-  const progresso = $('progDlg');
-  if (progresso && !progresso.hidden) return 'stay';
-
-  // Fecha primeiro a caixa de escolha de destino, como no Android padrão.
-  const alvo = $('alvoDlg');
-  if (alvo && !alvo.hidden) {
-    const cancelar = alvo.querySelector('[data-alvo=""]');
-    if (cancelar) cancelar.click();
-    return 'stay';
-  }
-
-  if (vista !== 'home') {
-    ultimoVoltarParaSair = 0;
-    // Volta à tela anterior quando existe uma entrada interna no histórico.
-    if (history.length > 1 && history.state && history.state.v) {
-      history.back();
-    } else {
-      ir('home', true);
-    }
-    return 'stay';
-  }
-
-  const agora = Date.now();
-  if (agora - ultimoVoltarParaSair <= 2200) {
-    ultimoVoltarParaSair = 0;
-    return 'exit';
-  }
-  ultimoVoltarParaSair = agora;
-  toast('Pressione Voltar novamente para sair.');
-  return 'stay';
-};
-
-
 document.addEventListener('click', e => {           // botões de navegação de todas as telas
   const go = e.target.closest('[data-go]'), back = e.target.closest('[data-back]');
   if (go) ir(go.dataset.go);
@@ -1402,10 +1382,6 @@ $('rGrid').addEventListener('click', async e => {
     ir('editor');
   }
 });
-$('splitMenu').addEventListener('click', e => {      // itens de navegação do menu do editor (captura: não chegam ao tratador antigo)
-  const b = e.target.closest('button'); if (!b || !/^nav-/.test(b.dataset.act || '')) return;
-  e.stopPropagation(); fecharMenu(); ir(b.dataset.act === 'nav-home' ? 'home' : 'settings');
-}, true);
 
 /* Configurações */
 $('sTema').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.tema = b.dataset.v; salvarPrefs(); applyTheme(); marcarSeg('sTema', PREF.tema); } });
