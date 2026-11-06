@@ -189,12 +189,7 @@ function previewFactor(){
   return Math.min(1, Math.max(0.2, altura * Math.min(devicePixelRatio || 1, 2) / OUT.h));
 }
 function draw(full = false){
-  // Em tela cheia limita a rasterização da prévia para manter o editor fluido.
-  // A exportação continua usando a resolução original (full=true).
-  const visualFactor = previewFactor();
-  const f = full ? (typeof full === 'number' ? full : 1)
-                 : (document.querySelector('.app')?.classList.contains('preview-expanded')
-                    ? Math.min(visualFactor, 0.45) : visualFactor);
+  const f = full ? (typeof full === 'number' ? full : 1) : previewFactor();   // full pode ser um número (2 = dobro do tamanho)
   const saved = { ...state };                                            // guarda os valores reais
   SCALED.forEach(k => state[k] = Math.round(saved[k]*f));                // versão reduzida só para este desenho
   const tw = Math.round(OUT.w*f), th = Math.round(OUT.h*f);
@@ -565,25 +560,23 @@ document.getElementById('btnReset').addEventListener('click', () => {
   applySize(); resetDock(); syncInputs(); draw();
 });
 
-/* Botão de ampliar: troca os dois ícones, sem girar o SVG ou recalcular
-   o canvas durante uma transição de tamanho (evita engasgos no WebView). */
+/* Botão de ampliar: alterna entre editor compacto e prévia em tela cheia. */
 const stageEl = document.querySelector('.stage'), bigBtn = document.getElementById('btnBig');
 const editorApp = document.querySelector('main.app');
 const zoomIcon = bigBtn.querySelector('svg');
-const ICON_EXPANDIR = '<path d="M15 3h6v6M21 3l-7 7M9 21H3v-6M3 21l7-7"/>';
-const ICON_RECOLHER = '<path d="M4 14h6v6M10 14l-7 7M20 10h-6V4M14 10l7-7"/>';
 function atualizarModoPrevia(big){
   editorApp.classList.toggle('preview-expanded', big);
   stageEl.classList.toggle('big', big);
   panel.classList.remove('hide');
-  bigBtn.setAttribute('aria-label', big ? 'Recolher prévia' : 'Ampliar prévia');
+  bigBtn.setAttribute('aria-label', big ? 'Reduzir prévia' : 'Ampliar prévia');
   bigBtn.setAttribute('aria-pressed', String(big));
-  bigBtn.title = big ? 'Recolher prévia' : 'Ampliar prévia';
-  if (zoomIcon) zoomIcon.innerHTML = big ? ICON_RECOLHER : ICON_EXPANDIR;
-  // Um único ajuste depois que o layout mudou; sem animação de altura.
+  bigBtn.title = big ? 'Reduzir prévia' : 'Ampliar prévia';
+  /* Ícones distintos: recolher para o centro / expandir para os cantos. */
+  if (zoomIcon) zoomIcon.innerHTML = big
+    ? '<path d="M8 8 3 3m5 5V3M8 8H3M16 8l5-5m-5 5V3m0 5h5M8 16l-5 5m5-5v5m0-5H3m13 0 5 5m-5-5v5m0-5h5"/>'
+    : '<path d="M8 3H3v5m0-5 6 6M16 21h5v-5m0 5-6-6M3 16v5h5m-5 0 6-6M21 8V3h-5m5 0-6 6"/>';
   requestAnimationFrame(() => { fitPhone(); schedule(); });
 }
-if (zoomIcon) zoomIcon.innerHTML = ICON_EXPANDIR;
 bigBtn.addEventListener('click', () => atualizarModoPrevia(!editorApp.classList.contains('preview-expanded')));
 
 /* Compatibilidade: WebViews Android antigos não têm ctx.roundRect; este substituto desenha o mesmo caminho com arcos */
@@ -665,20 +658,29 @@ function fitPhone(){
 }
 const _draw = draw;                                           // a lógica do canvas fica intacta: só ajustamos o mockup antes de desenhar
 draw = function (...a){ fitPhone(); return _draw(...a); };
-// Evita redesenhos repetidos quando o elemento muda apenas por efeitos visuais.
-let observedPreviewWidth = -1, observedPreviewHeight = -1;
-new ResizeObserver(entries => {
-  const box = entries[0]?.contentRect;
-  if (!box) return;
-  const w = Math.round(box.width), h = Math.round(box.height);
-  if (w === observedPreviewWidth && h === observedPreviewHeight) return;
-  observedPreviewWidth = w; observedPreviewHeight = h;
-  requestAnimationFrame(() => { fitPhone(); schedule(); });
-}).observe(pwrap);
+new ResizeObserver(() => { fitPhone(); schedule(); }).observe(pwrap);
 
 /* Entrega um arquivo: no APK abre o menu Compartilhar; no navegador baixa */
 function entregar(blob, nome){
   const P = window.Capacitor && Capacitor.Plugins;
+  // PNG do editor: salva diretamente na biblioteca de imagens do Android (MediaStore).
+  // Projetos JSON continuam usando o compartilhamento existente.
+  if (blob.type === 'image/png' && P?.DockOverlay?.saveImageToGallery && Capacitor.isNativePlatform()) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Não foi possível ler o PNG.'));
+      reader.onload = async () => {
+        try {
+          const salvo = await P.DockOverlay.saveImageToGallery({
+            data: String(reader.result).split(',')[1],
+            name: 'DockLiquida-' + new Date().toISOString().replace(/[:.]/g, '-') + '.png'
+          });
+          resolve(salvo);
+        } catch (e) { reject(e); }
+      };
+      reader.readAsDataURL(blob);
+    });
+  }
   if (P && P.Filesystem && P.Share && Capacitor.isNativePlatform()){
     return new Promise((ok, falha) => {
       const r = new FileReader();
@@ -701,7 +703,8 @@ async function baixarAltaRes(){                              // 2× o tamanho (l
     draw(f);
     const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
     draw();
-    await entregar(blob, 'wallpaper-liquid-glass-2x.png');
+    const salvo = await entregar(blob, 'wallpaper-liquid-glass-2x.png');
+    if (salvo?.saved) toast('Wallpaper salvo em Imagens/Dock Líquida.');
   } catch (e) { draw(); alert('Não foi possível gerar em alta resolução: ' + (e.message || e)); }
 }
 function salvarProjeto(){                                      // guarda todos os ajustes num arquivo .json
@@ -960,7 +963,7 @@ async function miniatura(f){                         // decodifica já reduzido 
   return new Promise(ok => c.toBlob(ok, 'image/jpeg', .82));
 }
 
-async function adicionar(arquivos){
+async function adicionar(arquivos, albumDestino = null){
   let ultimo = null, falhas = 0;
   for (const f of arquivos){
     try {
@@ -974,13 +977,24 @@ async function adicionar(arquivos){
   }
   for (const extra of gal.slice(LIMITE)) if (extra.id !== curId){ await DB.del(extra.id).catch(() => {}); delete FR[extra.id]; delete DK[extra.id]; }   // mantém só os 20 mais recentes
   salvarFR(); salvarDK(); await carregarGaleria();
+  // Associação direta ao álbum de destino; sem duplicar fotos na galeria do app.
+  if (albumDestino) {
+    const a = albunsFixos().find(a => a.id === albumDestino);
+    if (a) {
+      const validos = arquivos.length ? await Promise.all(arquivos.filter(f => /^image\//.test(f.type)).map(f => idDe(f).catch(() => null))) : [];
+      const disponiveis = new Set(gal.map(g => g.id));
+      a.ids = [...new Set([...(a.ids || []), ...validos.filter(id => id && disponiveis.has(id))])];
+      if (!a.coverId || !disponiveis.has(a.coverId)) a.coverId = a.ids[0] || null;
+      await DB.putAlbum(a);
+    }
+  }
   const aviso = falhas ? (falhas === arquivos.length ? 'Não foi possível ler essa imagem.' : falhas + ' imagem(ns) não puderam ser lidas.') : '';
   const trocou = ultimo ? await selecionar(ultimo) : false;       // um único aviso: o de seleção e o de falha não se apagam
   if (trocou || aviso) toast([trocou ? 'Wallpaper selecionado.' : '', aviso].filter(Boolean).join(' '));
   redesenharTelas();
 }
 
-async function adicionarRotacao(arquivos){
+async function adicionarRotacao(arquivos, albumDestino = null){
   let adicionadas = 0, falhas = 0;
   for (const f of arquivos){
     try {
@@ -996,6 +1010,16 @@ async function adicionarRotacao(arquivos){
     } catch (e) { falhas++; }
   }
   await carregarGaleria();
+  if (albumDestino) {
+    const a = albunsRotacao().find(a => a.id === albumDestino);
+    if (a) {
+      const validos = await Promise.all(arquivos.filter(f => /^image\//.test(f.type)).map(f => idDe(f).catch(() => null)));
+      const disponiveis = new Set(galRotacao.map(g => g.id));
+      a.ids = [...new Set([...(a.ids || []), ...validos.filter(id => id && disponiveis.has(id))])];
+      if (!a.coverId || !disponiveis.has(a.coverId)) a.coverId = a.ids[0] || null;
+      await DB.putAlbum(a);
+    }
+  }
   const msg = adicionadas ? adicionadas + (adicionadas === 1 ? ' imagem adicionada à galeria automática.' : ' imagens adicionadas à galeria automática.') : 'Nenhuma imagem foi adicionada.';
   toast(falhas ? msg + ' ' + falhas + ' falha(s).' : msg);
   PREF.trocaGerado = null; salvarPrefs();
@@ -1135,7 +1159,7 @@ async function remover(id){
 
 /* Salvar o enquadramento enquanto ele é ajustado (aproveita o gancho de salvamento que já existe) */
 const _saveSoon = saveSoon; let frT;
-saveSoon = function(){ _saveSoon(); clearTimeout(frT); frT = setTimeout(guardarEnquadramento, 700); };
+saveSoon = function(){ _saveSoon(); clearTimeout(frT); frT = setTimeout(() => { guardarEnquadramento(); agendarSincronizacaoRotacao(); }, 700); };
 $('btnFitReset').addEventListener('click', () => { state.zoom = 100; state.panX = 0; state.panY = 0; syncInputs(); schedule(); });
 
 /* ----- Telas ----- */
@@ -1187,9 +1211,10 @@ function desenharAlbums(){
     return `<button type="button" class="album-card" data-album="${esc(a.id)}">${primeiro ? `<img src="${urlDe(primeiro)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
   }).join('');
   $('albumSelecionar').hidden = !atual;
+  $('albumImportarCelular').hidden = !atual;
   $('albumGerenciar').hidden = !atual || !albumPainelAberto;
   $('albumSelecionar').setAttribute('aria-expanded', String(!!albumAtual && albumPainelAberto));
-  $('albumSelecionar').textContent = albumPainelAberto ? 'Fechar seleção de wallpapers' : '+ Adicionar wallpapers ao álbum';
+  $('albumSelecionar').textContent = albumPainelAberto ? 'Fechar galeria do app' : 'Adicionar da galeria do app';
   if (atual && albumPainelAberto){
     $('albumGerenciar').innerHTML = gal.map(g => `<label class="album-choice"><input type="checkbox" data-photo="${esc(g.id)}" ${(atual.ids || []).includes(g.id) ? 'checked' : ''}><img src="${urlDe(g)}" alt=""><span>${esc(g.name)}</span><button type="button" class="album-cover" data-cover="${esc(g.id)}" ${atual.coverId === g.id ? 'disabled' : ''}>${atual.coverId === g.id ? 'Capa atual' : 'Usar capa'}</button></label>`).join('') || '<p class="info">Adicione imagens à galeria para organizar este álbum.</p>';
   }
@@ -1260,7 +1285,8 @@ function desenharAlbunsRotacao(){
     return `<button type="button" class="album-card" data-ralbum="${esc(a.id)}">${rec ? `<img src="${urlDe(rec)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
   }).join('');
   $('rAlbumSelecionar').hidden = !atual;
-  $('rAlbumSelecionar').textContent = albumRotacaoPainel ? 'Fechar seleção' : '+ Adicionar wallpapers ao álbum';
+  $('rAlbumImportarCelular').hidden = !atual;
+  $('rAlbumSelecionar').textContent = albumRotacaoPainel ? 'Fechar galeria do app' : 'Adicionar da galeria do app';
   $('rAlbumGerenciar').hidden = !atual || !albumRotacaoPainel;
   if (atual && albumRotacaoPainel){
     $('rAlbumGerenciar').innerHTML = galRotacao.map(g => `<div class="album-choice"><label><input type="checkbox" data-rphoto="${esc(g.id)}" ${(atual.ids || []).includes(g.id) ? 'checked' : ''}> <img src="${urlDe(g)}" alt=""> <span>${esc(g.name)}</span></label><button type="button" class="album-cover" data-rcover="${esc(g.id)}" ${atual.coverId === g.id ? 'disabled' : ''}>${atual.coverId === g.id ? 'Capa atual' : 'Usar capa'}</button></div>`).join('') || '<p class="info">Adicione wallpapers à galeria automática.</p>';
@@ -1370,26 +1396,25 @@ function ir(nome, substituir){
   mostrar(nome);
 }
 const voltar = () => { if (history.length > 1) history.back(); else ir('home', true); };
-addEventListener('popstate', e => mostrar((e.state && e.state.v) || 'home'));
-
-/* Voltar nativo do Android (gesto lateral e botão). Mantido no script principal
-   para não desaparecer quando o editor for atualizado. */
-let ultimaTentativaSair = 0;
+/* Voltar do Android: gesto lateral e botão de 3 teclas seguem a navegação do app.
+   Na tela inicial, dois Voltar em até 2,2 segundos encerram o aplicativo. */
+let ultimoVoltarParaSair = 0;
 window.dockOnAndroidBack = function () {
+  // Durante uma operação que não pode ser interrompida, não fecha o app.
   const progresso = $('progDlg');
   if (progresso && !progresso.hidden) return 'stay';
 
-  const destino = $('alvoDlg');
-  if (destino && !destino.hidden) {
-    const cancelar = destino.querySelector('[data-alvo=""]');
+  // Fecha primeiro a caixa de escolha de destino, como no Android padrão.
+  const alvo = $('alvoDlg');
+  if (alvo && !alvo.hidden) {
+    const cancelar = alvo.querySelector('[data-alvo=""]');
     if (cancelar) cancelar.click();
-    else destino.hidden = true;
     return 'stay';
   }
 
   if (vista !== 'home') {
-    ultimaTentativaSair = 0;
-    // Se o histórico estiver inconsistente, retornar à tela inicial em vez de sair.
+    ultimoVoltarParaSair = 0;
+    // Volta à tela anterior quando existe uma entrada interna no histórico.
     if (history.length > 1 && history.state && history.state.v) {
       history.back();
     } else {
@@ -1399,14 +1424,15 @@ window.dockOnAndroidBack = function () {
   }
 
   const agora = Date.now();
-  if (ultimaTentativaSair && agora - ultimaTentativaSair <= 2200) {
-    ultimaTentativaSair = 0;
+  if (agora - ultimoVoltarParaSair <= 2200) {
+    ultimoVoltarParaSair = 0;
     return 'exit';
   }
-  ultimaTentativaSair = agora;
+  ultimoVoltarParaSair = agora;
   toast('Pressione Voltar novamente para sair.');
   return 'stay';
 };
+addEventListener('popstate', e => mostrar((e.state && e.state.v) || 'home'));
 
 document.addEventListener('click', e => {           // botões de navegação de todas as telas
   const go = e.target.closest('[data-go]'), back = e.target.closest('[data-back]');
@@ -1415,10 +1441,34 @@ document.addEventListener('click', e => {           // botões de navegação de
 });
 $('eBack').addEventListener('click', () => ir('home'));
 $('hDock').addEventListener('click', () => ir('editor'));
-['hPick', 'gAdd', 'gAdd2'].forEach(id => $(id).addEventListener('click', () => $('gFile').click()));   // seletor de fotos do Android: não pede permissão de armazenamento
-$('gFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionar(fs); });
-['rAdd', 'rAdd2'].forEach(id => $(id).addEventListener('click', () => $('rFile').click()));
-$('rFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionarRotacao(fs); });
+// Importação por arquivo funciona tanto na galeria geral como dentro de um álbum.
+let destinoPickerFixo = null, destinoPickerAuto = null;
+['hPick', 'gAdd', 'gAdd2'].forEach(id => $(id).addEventListener('click', () => {
+  destinoPickerFixo = albumAtual && $('v-gallery').classList.contains('on') ? albumAtual : null;
+  $('gFile').click();
+}));
+$('albumImportarCelular').addEventListener('click', () => {
+  destinoPickerFixo = albumAtual;
+  $('gFile').click();
+});
+$('gFile').addEventListener('change', e => {
+  const fs = [...e.target.files], destino = destinoPickerFixo;
+  e.target.value = ''; destinoPickerFixo = null;
+  if (fs.length) adicionar(fs, destino);
+});
+['rAdd', 'rAdd2'].forEach(id => $(id).addEventListener('click', () => {
+  destinoPickerAuto = albumRotacaoAtual;
+  $('rFile').click();
+}));
+$('rAlbumImportarCelular').addEventListener('click', () => {
+  destinoPickerAuto = albumRotacaoAtual;
+  $('rFile').click();
+});
+$('rFile').addEventListener('change', e => {
+  const fs = [...e.target.files], destino = destinoPickerAuto;
+  e.target.value = ''; destinoPickerAuto = null;
+  if (fs.length) adicionarRotacao(fs, destino);
+});
 $('fWall').addEventListener('change', e => {         // o cartão "Papel de parede final" do editor também passa pelo histórico
   e.stopImmediatePropagation(); const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionar(fs);
 }, true);
@@ -1450,10 +1500,15 @@ $('sCores').addEventListener('click', e => { const b = e.target.closest('button'
 $('sQual').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.qualidade = +b.dataset.v; salvarPrefs(); marcarSeg('sQual', b.dataset.v); schedule(); } });
 $('sEditor').addEventListener('change', e => { PREF.editorInicio = e.target.checked; salvarPrefs(); });
 $('sGlassFull').addEventListener('change', e => { PREF.glassFull = e.target.checked; salvarPrefs(); aplicarGlassNav(); });
-$('sIndiv').addEventListener('change', e => {
+$('sIndiv').addEventListener('change', async e => {
+  // A mesma preferência controla o editor e as imagens prontas da troca automática.
+  guardarEnquadramento();
   PREF.dockIndividual = e.target.checked; salvarPrefs();
-  if (PREF.dockIndividual && curId){ DK[curId] = dockAtual(); salvarDK(); }   // ao ligar, o wallpaper aberto guarda a Dock que está aberta
-  toast(PREF.dockIndividual ? 'Cada wallpaper guarda a própria Dock.' : 'Todos os wallpapers usam a mesma Dock.');
+  if (PREF.dockIndividual && curId && !DK[curId]) { DK[curId] = dockAtual(); salvarDK(); }
+  PREF.trocaGerado = null; salvarPrefs();
+  toast(PREF.dockIndividual ? 'Dock individual ativada, inclusive na troca automática.' : 'Dock compartilhada ativada, inclusive na troca automática.');
+  if (PREF.trocaAtiva) await sincronizarRotacaoAutomatica();
+  desenharConfig();
 });
 $('sHistClear').addEventListener('click', async () => {
   if (!gal.length || !confirm('Apagar todo o histórico de wallpapers? A imagem aberta no editor continua lá.')) return;
@@ -1521,14 +1576,15 @@ const mostrarProgresso = (sub) => { $('progS').textContent = sub; $('progDlg').h
 const esconderProgresso = () => { $('progDlg').hidden = true; };
 
 /* Desenha UM wallpaper da galeria automática com a Dock atual, em tamanho real (JPEG), sem mexer no que está aberto no editor. */
-async function renderizarItem(rec){
+async function renderizarItem(rec, dockCompartilhada){
   const bmp = await createImageBitmap(rec.blob);
   const salvo = { wall, zoom: state.zoom, panX: state.panX, panY: state.panY, dock: Object.fromEntries(CAMPOS_DOCK.map(k => [k, state[k]])) };
   try {
     wall = bmp; wallId++;                                          // wallId invalida o cache do fundo e do vidro
     const fr = FR[rec.id] || { zoom: 100, panX: 0, panY: 0 };     // cada wallpaper usa o enquadramento guardado dele
     state.zoom = fr.zoom; state.panX = fr.panX; state.panY = fr.panY;
-    if (PREF.dockIndividual && DK[rec.id]) aplicarDock(DK[rec.id]);   // e a Dock guardada dele
+    const dockDaImagem = PREF.dockIndividual ? (DK[rec.id] || dockCompartilhada) : dockCompartilhada;
+    aplicarDock(dockDaImagem);
     draw(true);
     return await new Promise(ok => cv.toBlob(ok, 'image/jpeg', .95));
   } finally {                                                      // devolve o editor ao estado anterior
@@ -1538,6 +1594,7 @@ async function renderizarItem(rec){
   }
 }
 async function gerarRotacao(){
+  const dockCompartilhada = dockAtual();
   const itens = imagensDoSlide();
   if (!itens.length) throw new Error('Adicione wallpapers à Galeria automática primeiro.');
   let feitas = 0;
@@ -1546,12 +1603,34 @@ async function gerarRotacao(){
     await DO.clearRotation();
     for (let i = 0; i < itens.length; i++){
       $('progS').textContent = (i + 1) + ' de ' + itens.length;
-      try { await DO.saveRotationImage({ index: feitas, data: await paraBase64(await renderizarItem(itens[i])) }); feitas++; }
+      try { await DO.saveRotationImage({ index: feitas, data: await paraBase64(await renderizarItem(itens[i], dockCompartilhada)) }); feitas++; }
       catch (e) { /* imagem ilegível: pula */ }
     }
   } finally { esconderProgresso(); }
   if (!feitas) throw new Error('Nenhuma imagem pôde ser gerada.');
   PREF.trocaGerado = { n: feitas, em: Date.now(), hash: hashTroca() }; salvarPrefs();
+}
+// Mantém a fila da troca automática sincronizada com as Docks individuais.
+let sincronizacaoRotacaoEmCurso = false;
+let timerSincronizacaoRotacao = null;
+async function sincronizarRotacaoAutomatica(){
+  if (!PREF.trocaAtiva || !trocaOk() || sincronizacaoRotacaoEmCurso) return;
+  sincronizacaoRotacaoEmCurso = true;
+  try {
+    await gerarRotacao();
+    toast('Wallpapers e Docks automáticos atualizados.');
+  } catch (e) {
+    toast('Não foi possível sincronizar. Use Atualizar em Ajustes.');
+  } finally {
+    sincronizacaoRotacaoEmCurso = false;
+  }
+}
+function agendarSincronizacaoRotacao(){
+  if (!PREF.trocaAtiva || !trocaOk()) return;
+  clearTimeout(timerSincronizacaoRotacao);
+  timerSincronizacaoRotacao = setTimeout(() => {
+    if (trocaDesatualizada()) sincronizarRotacaoAutomatica();
+  }, 10000);
 }
 async function desligarTroca(){
   await DO.cancelRotation(); await DO.clearRotation();             // cancela o agendamento e libera o espaço das imagens

@@ -21,7 +21,7 @@
 <main class="app">
   <!-- PALCO: aqui aparece o resultado -->
   <section class="stage">
-    <button id="btnBig" class="bigbtn" type="button" aria-label="Ampliar prévia" title="Ampliar prévia"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M21 3l-7 7M9 21H3v-6M3 21l7-7"/></svg></button>
+    <button id="btnBig" class="bigbtn" type="button" aria-label="Ampliar prévia" title="Ampliar prévia"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 21h5v-5M3 3l7 7M21 21l-7-7"/></svg></button>
     <button id="eBack" class="ebtn" type="button" aria-label="Voltar ao início"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 5 7.5 12l7 7"/></svg></button>
     <div class="pwrap" id="pwrap"><div class="phone" id="phone"><canvas id="cv"></canvas></div></div>
     <div class="info" id="info"></div>
@@ -119,7 +119,10 @@
       <div class="sec-h"><h3 id="albumTitulo">Meus álbuns</h3><button class="tonal" id="albumCriar" type="button"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Novo álbum</span></button></div>
       <div class="album-actions"><button type="button" class="tonal" id="albumVoltar" hidden>← Todos os álbuns</button><button type="button" class="tonal" id="albumEditar" hidden>Renomear</button><button type="button" class="tonal" id="albumExcluir" hidden>Excluir álbum</button></div>
       <div class="album-list" id="albumLista"></div>
-      <button type="button" class="tonal album-pick-toggle" id="albumSelecionar" hidden aria-expanded="false" aria-controls="albumGerenciar">+ Adicionar wallpapers ao álbum</button>
+      <div class="album-add-actions">
+        <button type="button" class="tonal album-pick-toggle" id="albumSelecionar" hidden aria-expanded="false" aria-controls="albumGerenciar">Adicionar da galeria do app</button>
+        <button type="button" class="tonal album-pick-toggle" id="albumImportarCelular" hidden>Adicionar do celular</button>
+      </div>
       <div class="album-manage" id="albumGerenciar" hidden></div>
     </div>
     <div class="sec-h"><h3>Wallpapers</h3></div>
@@ -167,7 +170,10 @@
         <button class="tonal" id="rAlbumExcluir" type="button" hidden>Excluir álbum</button>
       </div>
       <div class="album-list" id="rAlbumLista"></div>
-      <button class="tonal album-pick-toggle" id="rAlbumSelecionar" type="button" hidden>+ Adicionar wallpapers ao álbum</button>
+      <div class="album-add-actions">
+        <button class="tonal album-pick-toggle" id="rAlbumSelecionar" type="button" hidden>Adicionar da galeria do app</button>
+        <button class="tonal album-pick-toggle" id="rAlbumImportarCelular" type="button" hidden>Adicionar do celular</button>
+      </div>
       <div class="album-manage" id="rAlbumGerenciar" hidden></div>
 
     </section>
