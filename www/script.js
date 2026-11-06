@@ -189,7 +189,12 @@ function previewFactor(){
   return Math.min(1, Math.max(0.2, altura * Math.min(devicePixelRatio || 1, 2) / OUT.h));
 }
 function draw(full = false){
-  const f = full ? (typeof full === 'number' ? full : 1) : previewFactor();   // full pode ser um número (2 = dobro do tamanho)
+  // Em tela cheia limita a rasterização da prévia para manter o editor fluido.
+  // A exportação continua usando a resolução original (full=true).
+  const visualFactor = previewFactor();
+  const f = full ? (typeof full === 'number' ? full : 1)
+                 : (document.querySelector('.app')?.classList.contains('preview-expanded')
+                    ? Math.min(visualFactor, 0.45) : visualFactor);
   const saved = { ...state };                                            // guarda os valores reais
   SCALED.forEach(k => state[k] = Math.round(saved[k]*f));                // versão reduzida só para este desenho
   const tw = Math.round(OUT.w*f), th = Math.round(OUT.h*f);
@@ -560,25 +565,25 @@ document.getElementById('btnReset').addEventListener('click', () => {
   applySize(); resetDock(); syncInputs(); draw();
 });
 
-/* Prévia compacta ou ampliada, com ícone atualizado e transição visual.
-   No modo ampliado o painel não ocupa uma área vazia; o botão continua visível. */
+/* Botão de ampliar: troca os dois ícones, sem girar o SVG ou recalcular
+   o canvas durante uma transição de tamanho (evita engasgos no WebView). */
 const stageEl = document.querySelector('.stage'), bigBtn = document.getElementById('btnBig');
 const editorApp = document.querySelector('main.app');
 const zoomIcon = bigBtn.querySelector('svg');
-const zoomExpandPath = 'M8 3H3v5M16 21h5v-5M3 3l7 7M21 21l-7-7';
-const zoomShrinkPath = 'M3 8h5V3M21 16h-5v5M3 3l7 7M21 21l-7-7';
+const ICON_EXPANDIR = '<path d="M15 3h6v6M21 3l-7 7M9 21H3v-6M3 21l7-7"/>';
+const ICON_RECOLHER = '<path d="M4 14h6v6M10 14l-7 7M20 10h-6V4M14 10l7-7"/>';
 function atualizarModoPrevia(big){
   editorApp.classList.toggle('preview-expanded', big);
   stageEl.classList.toggle('big', big);
   panel.classList.remove('hide');
-  bigBtn.setAttribute('aria-label', big ? 'Reduzir prévia' : 'Ampliar prévia');
+  bigBtn.setAttribute('aria-label', big ? 'Recolher prévia' : 'Ampliar prévia');
   bigBtn.setAttribute('aria-pressed', String(big));
-  bigBtn.title = big ? 'Reduzir prévia' : 'Ampliar prévia';
-  if (zoomIcon) zoomIcon.innerHTML = big
-    ? '<path d="M9 3v6H3M15 21v-6h6M3 9l7-7M21 15l-7 7"/>'
-    : '<path d="M8 3H3v5M16 21h5v-5M3 3l7 7M21 21l-7-7"/>';
+  bigBtn.title = big ? 'Recolher prévia' : 'Ampliar prévia';
+  if (zoomIcon) zoomIcon.innerHTML = big ? ICON_RECOLHER : ICON_EXPANDIR;
+  // Um único ajuste depois que o layout mudou; sem animação de altura.
   requestAnimationFrame(() => { fitPhone(); schedule(); });
 }
+if (zoomIcon) zoomIcon.innerHTML = ICON_EXPANDIR;
 bigBtn.addEventListener('click', () => atualizarModoPrevia(!editorApp.classList.contains('preview-expanded')));
 
 /* Compatibilidade: WebViews Android antigos não têm ctx.roundRect; este substituto desenha o mesmo caminho com arcos */
@@ -660,7 +665,16 @@ function fitPhone(){
 }
 const _draw = draw;                                           // a lógica do canvas fica intacta: só ajustamos o mockup antes de desenhar
 draw = function (...a){ fitPhone(); return _draw(...a); };
-new ResizeObserver(() => { fitPhone(); schedule(); }).observe(pwrap);
+// Evita redesenhos repetidos quando o elemento muda apenas por efeitos visuais.
+let observedPreviewWidth = -1, observedPreviewHeight = -1;
+new ResizeObserver(entries => {
+  const box = entries[0]?.contentRect;
+  if (!box) return;
+  const w = Math.round(box.width), h = Math.round(box.height);
+  if (w === observedPreviewWidth && h === observedPreviewHeight) return;
+  observedPreviewWidth = w; observedPreviewHeight = h;
+  requestAnimationFrame(() => { fitPhone(); schedule(); });
+}).observe(pwrap);
 
 /* Entrega um arquivo: no APK abre o menu Compartilhar; no navegador baixa */
 function entregar(blob, nome){

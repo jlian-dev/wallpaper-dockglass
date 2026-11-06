@@ -1596,35 +1596,44 @@ button#albumCriar, button#rAlbumCriar, button#gAdd, button#rAdd { display: inlin
 button#albumCriar .ui-icon, button#rAlbumCriar .ui-icon, button#gAdd .ui-icon, button#rAdd .ui-icon { width: 17px; height: 17px; }
 
 
-/* ===== Editor mobile: espaço útil e prévia ampliável ===== */
+/* ===== Editor mobile: ajuste único da área de prévia =====
+   48dvh deixa a imagem próxima de 35–40% no aparelho do teste.
+   Expandir não anima o tamanho do canvas, para evitar travadas na renderização. */
 @media (max-width: 820px) {
-  /* Padrão: a prévia ocupa menos espaço e os controles têm área para edição. */
   .app > .stage {
-    height: 47dvh;
+    height: 48dvh;
     min-height: 0;
-    flex: 0 0 auto;
-    transition: height .34s cubic-bezier(.2,.8,.2,1);
+    flex: 0 0 48dvh;
+    overflow: hidden;
+    transition: none;
   }
   .app > .panel {
+    flex: 1 1 0;
     min-height: 0;
-    flex: 1 1 auto;
+    max-height: none;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px), var(--sab, 0px));
   }
   .app.preview-expanded > .stage,
   .app.preview-expanded > .stage.big {
-    height: 100dvh;
-    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    height: 100%;
+    flex-basis: 100%;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
   }
   .app.preview-expanded > .panel { display: none; }
-  /* Não esconder os controles na visualização normal. */
+  .app:not(.preview-expanded) > .panel { display: flex; }
   .app:not(.preview-expanded) > .panel details { visibility: visible; }
-  .stage .bigbtn { transition: background-color .2s ease, transform .3s cubic-bezier(.2,.8,.2,1); }
-  .stage .bigbtn .ui-icon { transition: transform .3s ease; }
-  .app.preview-expanded .stage .bigbtn { background: var(--acc); color: var(--acc-fg); }
-  .app.preview-expanded .stage .bigbtn .ui-icon { transform: rotate(90deg); }
+  .stage .bigbtn {
+    transition: background-color .16s ease, color .16s ease;
+  }
+  .stage .bigbtn .ui-icon { transition: none; transform: none !important; }
+  .app.preview-expanded .stage .bigbtn {
+    background: var(--acc);
+    color: var(--acc-fg);
+  }
+  .stage .bigbtn:active { opacity: .82; }
 }
 @media (max-width: 820px) and (prefers-reduced-motion: reduce) {
-  .app > .stage, .stage .bigbtn, .stage .bigbtn .ui-icon { transition: none !important; }
+  .stage .bigbtn { transition: none !important; }
 }
