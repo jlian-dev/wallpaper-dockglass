@@ -1329,6 +1329,44 @@ function ir(nome, substituir){
 const voltar = () => { if (history.length > 1) history.back(); else ir('home', true); };
 addEventListener('popstate', e => mostrar((e.state && e.state.v) || 'home'));
 
+/* Voltar do Android: gesto lateral e botão de 3 teclas seguem a navegação do app.
+   Na tela inicial, dois Voltar em até 2,2 segundos encerram o aplicativo. */
+let ultimoVoltarParaSair = 0;
+window.dockOnAndroidBack = function () {
+  // Durante uma operação que não pode ser interrompida, não fecha o app.
+  const progresso = $('progDlg');
+  if (progresso && !progresso.hidden) return 'stay';
+
+  // Fecha primeiro a caixa de escolha de destino, como no Android padrão.
+  const alvo = $('alvoDlg');
+  if (alvo && !alvo.hidden) {
+    const cancelar = alvo.querySelector('[data-alvo=""]');
+    if (cancelar) cancelar.click();
+    return 'stay';
+  }
+
+  if (vista !== 'home') {
+    ultimoVoltarParaSair = 0;
+    // Volta à tela anterior quando existe uma entrada interna no histórico.
+    if (history.length > 1 && history.state && history.state.v) {
+      history.back();
+    } else {
+      ir('home', true);
+    }
+    return 'stay';
+  }
+
+  const agora = Date.now();
+  if (agora - ultimoVoltarParaSair <= 2200) {
+    ultimoVoltarParaSair = 0;
+    return 'exit';
+  }
+  ultimoVoltarParaSair = agora;
+  toast('Pressione Voltar novamente para sair.');
+  return 'stay';
+};
+
+
 document.addEventListener('click', e => {           // botões de navegação de todas as telas
   const go = e.target.closest('[data-go]'), back = e.target.closest('[data-back]');
   if (go) ir(go.dataset.go);
