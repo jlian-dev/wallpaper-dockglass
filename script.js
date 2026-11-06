@@ -1,0 +1,1578 @@
+/* =====================================================================
+   Dock Líquida · script.js
+   Carregado no fim do <body>: roda depois que o HTML existe. As funções novas podem sobrescrever as antigas (a última declaração vale).
+
+   Blocos, na ordem em que aparecem no arquivo:
+    1. Avisos de erro na tela (útil no APK, onde não há console)
+    2. 1. ESTADO: todos os números que o utilizador controla ficam aqui.
+    3. 2. PAPEL DE PAREDE PADRÃO: um degradê para a ferramenta funcionar
+    4. 3. DESENHO: a cada mudança, repintamos tudo na ordem certa
+    5. DESENHO RÁPIDO
+    6. 2b. REFRAÇÃO FÍSICA (método do artigo https://kube.io/blog/liquid-glass-css-svg/)
+    7. 4. INTERFACE: cria os controlos e liga os eventos
+    8. Configurações guardadas no aparelho (localStorage)
+    9. Celular: abas do painel inferior
+   10. Tela inicial ao vivo (experimental, só no APK)
+   11. Alinhar sobre a tela inicial REAL (sobreposição nativa do Android)
+   12. Aplicar direto como papel de parede (sem baixar nem salvar)
+   13. v6: interface (miniaturas, mockup, handle e botão dividido)
+   14. v8: abas Base | Dock, menu ☰ e cartões (inspirado no DockWalls)
+   15. v9: cores dinâmicas (Material 3 / Material You)
+   16. v10: áreas seguras reais (barras do sistema)
+   17. v11: telas, galeria com histórico e preferências
+   18. v12: sem print de referência; destino do wallpaper escolhido na hora de aplicar
+   ===================================================================== */
+
+/* ---------- Avisos de erro na tela (útil no APK, onde não há console) ---------- */
+/* Mostra erros de JavaScript na própria tela (útil dentro do APK, onde não há console) */
+function showErr(msg){
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99;background:#b00020;color:#fff;font:12px/1.4 monospace;padding:8px;white-space:pre-wrap';
+  d.textContent = 'Erro: ' + msg;
+  document.body.appendChild(d);
+}
+window.addEventListener('error', e => showErr(e.message + ' (linha ' + e.lineno + ')'));
+window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
+
+/* =====================================================================
+   1. ESTADO: todos os números que o utilizador controla ficam aqui.
+   Mudou um número? Redesenhamos tudo a partir deste objeto.
+   ===================================================================== */
+const state = {
+  x: 0,          // deslocamento horizontal em relação ao centro (px)
+  y: 0,          // distância do topo da dock até o topo da imagem (px)
+  w: 0, h: 0,    // largura e altura da dock (px)
+  r: 0,          // raio da curvatura dos cantos (px)
+  blur: 18,      // desfoque do fundo atrás do vidro (px)
+  ior: 1.5,      // índice de refração do vidro (1 = ar, 1.5 = vidro)
+  thick: 60,     // espessura do vidro (px)
+  scale: 100,    // escala da refração (%)
+  chroma: 8,     // aberração cromática (%)
+  angle: -60,    // direção da luz do reflexo (graus)
+  profile: 'squircle', // formato da superfície do bisel
+  wpBlur: 0,        // desfoque do papel de parede inteiro (px)
+  zoom: 100,     // zoom do papel de parede dentro do quadro (%; 100 = só o corte mínimo)
+  panX: 0,       // enquadramento horizontal (-100 a 100)
+  panY: 0,       // enquadramento vertical (-100 a 100)
+  bevel: 34,     // largura do bisel, a faixa de borda que "entorta" a luz (px)
+  shine: 60      // intensidade do brilho especular (0–100)
+};
+
+// Lista que gera os botões -1 / +1 (chave do estado, rótulo na tela)
+const STEPPERS = [['y','Posição Y'],['x','Posição X'],['w','Largura'],['h','Altura'],['r','Curvatura']];
+// Lista que gera os sliders (chave, rótulo, mínimo, máximo)
+const SLIDERS = [['blur','Desfoque do vidro',0,60],
+                 ['bevel','Largura do bisel',8,150],['thick','Espessura do vidro',4,200],
+                 ['ior','Índice de refração',1,2,0.01],['scale','Escala da refração',0,150],
+                 ['chroma','Aberração cromática',0,30],['shine','Brilho especular',0,100],['angle','Ângulo da luz',-180,180]];
+
+const cv = document.getElementById('cv');       // elemento <canvas>
+const ctx = cv.getContext('2d');                // "caneta" para desenhar nele
+let wall = makeDefaultWall();                   // imagem de fundo (começa com um degradê)
+
+/* =====================================================================
+   2. PAPEL DE PAREDE PADRÃO: um degradê para a ferramenta funcionar
+   mesmo antes de carregares uma imagem (tamanho de um iPhone 15).
+   ===================================================================== */
+function makeDefaultWall(){
+  const c = document.createElement('canvas'); c.width = 1179; c.height = 2556;
+  const g = c.getContext('2d');
+  const lin = g.createLinearGradient(0,0,1179,2556);   // degradê diagonal
+  lin.addColorStop(0,'#ff7a59'); lin.addColorStop(.5,'#7a4dff'); lin.addColorStop(1,'#12c2e9');
+  g.fillStyle = lin; g.fillRect(0,0,1179,2556);
+  const glow = g.createRadialGradient(300,2300,20,300,2300,700);  // mancha de luz perto da dock
+  glow.addColorStop(0,'rgba(255,255,255,.7)'); glow.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle = glow; g.fillRect(0,0,1179,2556);
+  return c;
+}
+
+/* Tamanho de saída: o do print (o tamanho real do ecrã), o da imagem, ou o que escreveres.
+   Ao mudar de tamanho, a dock é reescalada na mesma proporção para não "fugir". */
+function applySize(){
+  const oW = document.getElementById('outW'), oH = document.getElementById('outH');
+  const modo = document.getElementById('outMode').value;
+  if (modo === 'device'){ oW.value = Math.round(screen.width * devicePixelRatio); oH.value = Math.round(screen.height * devicePixelRatio); }   // resolução física deste aparelho
+  const custom = modo === 'custom' || modo === 'device';
+  oW.disabled = oH.disabled = modo !== 'custom';             // só o modo Personalizado deixa digitar
+  let W, H;
+  if (custom){
+    W = Math.min(8192, Math.max(64, Math.round(+oW.value) || OUT.w));   // limites seguros do canvas
+    H = Math.min(8192, Math.max(64, Math.round(+oH.value) || OUT.h));
+  } else {
+    [W, H] = sizeOf(wall);                                  // tamanho da própria imagem
+  }
+  oW.value = W; oH.value = H;
+  if ((W !== OUT.w || H !== OUT.h) && OUT.w > 0){
+    const fx = W/OUT.w, fy = H/OUT.h;                 // fatores de escala horizontal e vertical
+    ['x','w','r','bevel','thick','blur','wpBlur'].forEach(k => state[k] = Math.round(state[k]*fx));
+    ['y','h'].forEach(k => state[k] = Math.round(state[k]*fy));
+  }
+  OUT.w = W; OUT.h = H;                                      // tamanho real de exportação (o canvas da tela usa a prévia)
+}
+
+/* Desenha uma imagem no modo "cobrir": ela é ampliada só até preencher o quadro e o
+   excesso é cortado. A proporção original NUNCA muda, então não há esticar.
+   fixed = true ignora zoom e enquadramento (usado no print). */
+/* Cache do fundo: papel de parede já cortado e desfocado fica guardado num canvas
+   e só é refeito quando algo dele muda (assim arrastar a dock não recalcula o desfoque). */
+const baseCv = document.createElement('canvas');
+let baseKey = '', wallId = 0, glassKey = '', GD = null, GW = 0;
+const OUT = { w: 0, h: 0 };                     // tamanho real de saída (o canvas visível pode ser menor)
+const COL = new Float32Array(3);                // cor do pixel reutilizada (evita criar um array por pixel)
+/* Fundo desfocado do vidro: calculado UMA vez e guardado em GD (RGBA).
+   Antes era refeito a cada quadro, e isso pesava muito. */
+function buildGlass(){
+  const g = document.createElement('canvas'); g.width = baseCv.width; g.height = baseCv.height;
+  const gc = g.getContext('2d');
+  gc.drawImage(baseCv, 0, 0);                     // fundo nítido por baixo: evita borda transparente
+  gc.filter = `blur(${state.blur}px) saturate(1.5) brightness(1.06)`;   // vidro desfoca e realça a cor
+  gc.drawImage(baseCv, 0, 0);
+  GW = g.width; GD = gc.getImageData(0, 0, g.width, g.height).data;
+}
+function drawCover(img, fixed, c = ctx){
+  const [iw, ih] = sizeOf(img);
+  const s = Math.max(cv.width/iw, cv.height/ih) * (fixed ? 1 : state.zoom/100 * (1 + 4*state.wpBlur/Math.min(cv.width, cv.height)));  // com desfoque, amplia um pouco para as bordas não ficarem transparentes
+  // // escala única nos dois eixos
+  const dw = iw*s, dh = ih*s;                                  // tamanho da imagem já escalada
+  const px = fixed ? 0 : state.panX/100, py = fixed ? 0 : state.panY/100;
+  const dx = (cv.width - dw)/2 - px*(dw - cv.width)/2;         // 0 = centrado; ±100 = encosta na borda
+  const dy = (cv.height - dh)/2 - py*(dh - cv.height)/2;
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+  c.filter = (!fixed && state.wpBlur > 0) ? `blur(${state.wpBlur}px)` : 'none';   // desfoque só no papel de parede
+  c.drawImage(img, dx, dy, dw, dh);
+  c.filter = 'none';
+}
+
+/* Tamanho real de qualquer fonte de imagem (canvas, bitmap...) */
+const sizeOf = s => [s.naturalWidth || s.width, s.naturalHeight || s.height];
+
+/* Define uma dock inicial proporcional ao tamanho do papel de parede */
+function resetDock(){
+  const W = OUT.w, H = OUT.h;   // usa o tamanho do quadro de saída (print ou personalizado)
+  state.w = Math.round(W*0.9);
+  state.h = Math.round(W*0.2);
+  state.x = 0;
+  state.y = H - state.h - Math.round(H*0.025);   // perto da base da tela
+  state.r = Math.round(state.h*0.36);
+  state.bevel = Math.round(state.h*0.35);        // bisel ≈ 1/3 da altura da dock
+  state.thick = Math.round(state.bevel*1.2);     // espessura do vidro proporcional ao bisel
+  state.blur = Math.round(W*0.012);              // desfoque proporcional ao tamanho da imagem
+}
+
+/* Usa uma nova imagem como papel de parede: o canvas passa a ter a resolução dela */
+function setWall(img){
+  wall = img; wallId++;                          // wallId invalida o cache do fundo
+  state.zoom = 100; state.panX = 0; state.panY = 0;   // novo papel de parede: enquadramento padrão
+  applySize();           // define o tamanho de saída (print, imagem ou personalizado)
+  if (needReset){ resetDock(); needReset = false; }  // só na primeira vez: depois a dock ajustada é mantida
+  syncInputs(); draw();
+}
+
+/* =====================================================================
+   3. DESENHO: a cada mudança, repintamos tudo na ordem certa
+   ===================================================================== */
+/* ---------- DESENHO RÁPIDO ----------
+   A prévia é desenhada em resolução reduzida (só o necessário para a tela do aparelho), o que
+   deixa tudo muito mais leve no celular. O PNG exportado usa o tamanho real (full = true). */
+const SCALED = ['x','y','w','h','r','bevel','thick','blur','wpBlur'];   // medidas em px que acompanham a escala
+function previewFactor(){
+  const mobile = innerWidth <= 820;
+  if (mobile){                                           // celular: usa o tamanho real da caixa da prévia na tela
+    const r = cv.getBoundingClientRect();
+    if (r.width && OUT.h){
+      const s = Math.min(r.width/OUT.w, r.height/OUT.h);
+      return Math.min(1, Math.max(0.2, s * Math.min(devicePixelRatio || 1, 2)));
+    }
+  }
+  const big = document.querySelector('.stage').classList.contains('big');
+  const altura = innerHeight * (mobile ? (big ? .74 : .46) : .8);       // altura que a prévia ocupa na tela (px CSS)
+  return Math.min(1, Math.max(0.2, altura * Math.min(devicePixelRatio || 1, 2) / OUT.h));
+}
+function draw(full = false){
+  const f = full ? (typeof full === 'number' ? full : 1) : previewFactor();   // full pode ser um número (2 = dobro do tamanho)
+  const saved = { ...state };                                            // guarda os valores reais
+  SCALED.forEach(k => state[k] = Math.round(saved[k]*f));                // versão reduzida só para este desenho
+  const tw = Math.round(OUT.w*f), th = Math.round(OUT.h*f);
+  if (cv.width !== tw) cv.width = tw;                                    // redimensionar o canvas é caro: só se mudou
+  if (cv.height !== th) cv.height = th;
+  try { render(); } finally { Object.assign(state, saved); }     // devolve os valores reais
+}
+function render(){
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0,0,W,H);
+  const key = [W, H, state.zoom, state.panX, state.panY, state.wpBlur, wallId].join('|');   // "assinatura" do fundo
+  if (key !== baseKey){ baseCv.width = W; baseCv.height = H; drawCover(wall, false, baseCv.getContext('2d')); baseKey = key; }
+  ctx.drawImage(baseCv, 0, 0);
+  const gkey = key + '|' + state.blur;               // o vidro só é recalculado se o fundo ou o desfoque mudarem
+  if (gkey !== glassKey){ buildGlass(); glassKey = gkey; }               // 1) papel de parede
+  drawDock();                                    // 2) dock de vidro
+  // Aviso de qualidade: escala > 1 significa que a imagem original é menor que o quadro e foi ampliada
+  const sc = Math.max(OUT.w/sizeOf(wall)[0], OUT.h/sizeOf(wall)[1]) * state.zoom/100;
+  document.getElementById('info').textContent = OUT.w + ' × ' + OUT.h + ' px (prévia a ' + Math.round(W/OUT.w*100) + '%, o PNG sai em 100%) · ' +
+    (sc > 1.001 ? 'papel de parede ampliado ' + sc.toFixed(2) + '×: pode perder nitidez' : 'sem ampliação, nitidez total');
+  saveSoon();
+}
+
+/* =====================================================================
+   2b. REFRAÇÃO FÍSICA (método do artigo https://kube.io/blog/liquid-glass-css-svg/)
+   Em vez de "empurrar" pixels à vontade, simulamos 128 raios de luz que
+   atravessam o vidro, do ponto da borda até o fim do bisel, e guardamos
+   quanto cada raio se desvia. Depois só consultamos essa tabela.
+   ===================================================================== */
+// Altura do vidro (0 a 1) em função da distância à borda x (0 = borda, 1 = fim do bisel)
+const squircle = x => Math.pow(1 - Math.pow(1-x,4), 1/4);      // curva suave que a Apple usa
+const PROFILES = {
+  squircle,
+  circle:  x => Math.sqrt(1 - (1-x)*(1-x)),                      // cúpula esférica (transição mais dura)
+  concave: x => 1 - squircle(x),                                 // tigela: empurra a luz para fora
+  lip:     x => { const t = x*x*x*(x*(x*6-15)+10);               // smootherstep: mistura convexo e côncavo
+                  return squircle(x)*(1-t) + (1-squircle(x))*t; }
+};
+
+function buildTable(profile, bevel, thick, ior){
+  const f = PROFILES[profile] || squircle;
+  const eta = 1/ior;                                  // razão n1/n2 (ar → vidro)
+  const table = [];
+  for (let i=0; i<128; i++){
+    const x = i/127;
+    const a = Math.max(0,x-0.001), b = Math.min(1,x+0.001);
+    // inclinação da superfície (derivada numérica), convertida de unidades normalizadas para px
+    const slope = (f(b)-f(a))/(b-a) * thick/bevel;
+    const len = Math.hypot(slope,1);
+    const nx = -slope/len, nz = 1/len;               // normal da superfície (vetor unitário)
+    const cosi = nz;                                  // raio incidente vertical I=(0,-1): cos = -(N·I)
+    const k = 1 - eta*eta*(1-cosi*cosi);
+    const c = eta*cosi - Math.sqrt(Math.max(0,k));   // lei de Snell em forma vetorial
+    const tx = c*nx, tz = -eta + c*nz;               // direção do raio refratado
+    const z = thick*f(x);                             // altura do vidro neste ponto
+    // desvio lateral = quanto o raio anda de lado até chegar ao fundo (altura z)
+    table.push(tz < -1e-6 ? tx*z/(-tz) : 0);
+  }
+  return table;                                       // positivo = o fundo visto vem de mais para dentro
+}
+
+/* Caminho de um retângulo arredondado (usado só para a sombra) */
+function roundRectPath(x,y,w,h,r){
+  ctx.beginPath(); ctx.roundRect(x,y,w,h,r);
+}
+
+/* Cache da FORMA do vidro. Para cada pixel da Dock guarda a transparência (A), a direção da borda (NX, NY),
+   o desvio da refração (DISP) e o brilho da borda (HL0). Isso só depende do formato (tamanho, curvatura, bisel,
+   espessura, índice, escala, perfil, ângulo da luz) e não da posição nem do fundo; por isso arrastar a Dock só
+   refaz a leitura do fundo e a mistura de cores, que é bem mais rápido. */
+const FIELD = { key: '', W: 0, H: 0, A: null, NX: null, NY: null, DISP: null, HL0: null, img: null, cvs: null };
+
+function drawDock(){
+  const w = state.w, h = state.h;
+  const r = Math.min(state.r, w/2, h/2);        // o raio nunca passa de metade do lado menor
+  const left = Math.round(cv.width/2 + state.x - w/2);  // x = 0 significa "centrada"
+  const top = state.y;
+
+  // --- Sombra suave da dock: a forma é desenhada FORA da tela e só a sombra (deslocada de volta) aparece,
+  //     então nenhum pixel preto toca a borda do vidro ---
+  ctx.save();
+  const OFF = cv.width + w + 400;
+  ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = h*0.25; ctx.shadowOffsetX = OFF; ctx.shadowOffsetY = h*0.08;
+  ctx.fillStyle = '#000';
+  roundRectPath(left - OFF, top, w, h, r);
+  ctx.fill();
+  ctx.restore();
+
+  // --- Passo A: o fundo desfocado já está pronto em GD (cache); não se desfoca a cada quadro ---
+  // --- Passo B: forma do vidro (cache). Só é recalculada quando o formato muda ---
+  const bevel = Math.min(state.bevel, h/2);                              // bisel não passa de metade da altura
+  const rimW = Math.max(1.5, 2.5*cv.width/1179);                         // espessura do fio de luz, proporcional à imagem
+  const F = FIELD, W = Math.max(1, Math.ceil(w)), H = Math.max(1, Math.ceil(h));   // só a área da Dock: fora dela o alfa é sempre 0
+  const key = [w, h, r, bevel, state.thick, state.ior, state.scale, state.profile, state.angle, rimW].join('|');
+  if (F.key !== key || F.W !== W || F.H !== H){
+    const table = buildTable(state.profile, bevel, state.thick, state.ior);   // tabela de refração
+    const n = W*H;
+    if (F.W !== W || F.H !== H || !F.A){
+      F.A = new Uint8ClampedArray(n); F.NX = new Float64Array(n); F.NY = new Float64Array(n); F.DISP = new Float64Array(n); F.HL0 = new Float64Array(n);
+      F.cvs = document.createElement('canvas'); F.cvs.width = W; F.cvs.height = H;
+    }
+    F.img = new ImageData(W, H);                                         // vazia: pixels fora da forma ficam transparentes
+    const cx = w/2, cy = h/2;                                            // centro da dock
+    const hx = w/2 - r, hy = h/2 - r;                                    // "miolo" reto do retângulo
+    const ang = state.angle*Math.PI/180, LX = Math.cos(ang), LY = Math.sin(ang);   // direção da luz
+    for (let py = 0; py < H; py++){
+      for (let px = 0; px < W; px++){
+        const k = py*W + px;
+        // Distância assinada à borda (SDF): negativa = dentro, positiva = fora
+        const dx = px+0.5-cx, dy = py+0.5-cy;
+        const qx = Math.abs(dx)-hx, qy = Math.abs(dy)-hy;
+        const ox = Math.max(qx,0), oy = Math.max(qy,0);
+        const len = Math.sqrt(ox*ox + oy*oy);
+        const dist = len + Math.min(Math.max(qx,qy),0) - r;
+        if (dist > 0.5){ F.A[k] = 0; F.DISP[k] = 0; F.HL0[k] = 0; continue; }   // fora da dock: não pinta
+        // Normal externa: direção para onde a borda "aponta" neste pixel
+        let nx, ny;
+        if (len > 0){ nx = ox/len*Math.sign(dx); ny = oy/len*Math.sign(dy); } // cantos
+        else if (qx > qy){ nx = Math.sign(dx); ny = 0; }                      // laterais
+        else { nx = 0; ny = Math.sign(dy); }                                  // topo/base
+        const depth = Math.max(0, -dist);                                     // distância da borda para dentro (nunca negativa: evitava NaN nos cantos)
+        const idx = Math.min(127, Math.floor(depth/bevel*127));               // posição na tabela (0 = borda, 127 = fim do bisel)
+        F.NX[k] = nx; F.NY[k] = ny;
+        F.DISP[k] = depth < bevel ? table[idx]*state.scale/100 : 0;           // desvio em px (0 no miolo plano do vidro)
+        // Brilho da borda: fio de luz fino, mais forte do lado virado para a luz
+        const dot = nx*LX + ny*LY;                                            // 1 = borda virada para a luz, -1 = lado oposto
+        const rim = depth < rimW ? 1 - depth/rimW : 0;
+        F.HL0[k] = rim * (0.2 + 0.8*Math.abs(dot)) * (dot > 0 ? 1 : 0.6);
+        F.A[k] = Math.min(1, Math.max(0, 0.5 - dist))*255;                    // alfa: suaviza a serrilha da borda
+      }
+    }
+    F.key = key; F.W = W; F.H = H;
+  }
+
+  // --- Passo C: cor de cada pixel = fundo desfocado (com refração) + película branca + reflexo ---
+  const A = F.A, NX = F.NX, NY = F.NY, DISP = F.DISP, HL0 = F.HL0, od = F.img.data;
+  const shine = state.shine/100, cr = state.chroma/100, GH = cv.height, GW1 = GW - 1, GH1 = GH - 1;
+  for (let py = 0; py < H; py++){
+    const tint = 0.08 + 0.10*(1 - Math.min(1, Math.max(0, py/h)));          // película branca translúcida, mais forte no topo (vidro fosco)
+    const omt = 1 - tint, t255 = 255*tint;
+    const gy = top + py;                                                    // linha correspondente no canvas
+    for (let px = 0; px < W; px++){
+      const k = py*W + px, a = A[k];
+      if (a === 0) continue;
+      const i = k*4, disp = DISP[k];
+      let c0, c1, c2;
+      if (disp === 0){                                                      // miolo plano: os três canais leem o mesmo pixel
+        const sx = Math.min(GW1, Math.max(0, left + px)), sy = Math.min(GH1, Math.max(0, gy)), j = (sy*GW + sx)*4;
+        c0 = GD[j]; c1 = GD[j+1]; c2 = GD[j+2];
+      } else {                                                              // bisel: refração com aberração cromática (R desvia menos, B mais)
+        const nx = NX[k], ny = NY[k];
+        let kk = disp*(1 - cr);
+        let sx = Math.min(GW1, Math.max(0, left + Math.round(px - nx*kk))), sy = Math.min(GH1, Math.max(0, top + Math.round(py - ny*kk)));
+        c0 = GD[(sy*GW + sx)*4];
+        kk = disp;
+        sx = Math.min(GW1, Math.max(0, left + Math.round(px - nx*kk))); sy = Math.min(GH1, Math.max(0, top + Math.round(py - ny*kk)));
+        c1 = GD[(sy*GW + sx)*4 + 1];
+        kk = disp*(1 + cr);
+        sx = Math.min(GW1, Math.max(0, left + Math.round(px - nx*kk))); sy = Math.min(GH1, Math.max(0, top + Math.round(py - ny*kk)));
+        c2 = GD[(sy*GW + sx)*4 + 2];
+      }
+      let v0 = c0*omt + t255, v1 = c1*omt + t255, v2 = c2*omt + t255;      // mistura com branco
+      const hl = HL0[k]*shine;
+      if (hl !== 0){                                                        // só na borda: soma o reflexo (branco + cor saturada)
+        const lum = 0.3*c0 + 0.59*c1 + 0.11*c2, omh = 1 - hl;
+        v0 = v0*omh + (127.5 + 0.5*Math.min(255, Math.max(0, lum + (c0-lum)*2.5)))*hl;
+        v1 = v1*omh + (127.5 + 0.5*Math.min(255, Math.max(0, lum + (c1-lum)*2.5)))*hl;
+        v2 = v2*omh + (127.5 + 0.5*Math.min(255, Math.max(0, lum + (c2-lum)*2.5)))*hl;
+      }
+      od[i] = v0; od[i+1] = v1; od[i+2] = v2; od[i+3] = a;
+    }
+  }
+
+  // --- Passo D: colocar o resultado no canvas principal ---
+  F.cvs.getContext('2d').putImageData(F.img, 0, 0);     // putImageData ignora transparência, por isso o canvas temporário (reaproveitado)
+  ctx.drawImage(F.cvs, left, top);                      // drawImage respeita o alfa
+}
+
+/* Agenda 1 redesenho por quadro: evita travar quando arrastas um slider */
+let queued = false;
+function schedule(){
+  if (queued) return; queued = true;
+  requestAnimationFrame(()=>{ queued = false; draw(); });
+}
+
+/* =====================================================================
+   4. INTERFACE: cria os controlos e liga os eventos
+   ===================================================================== */
+document.getElementById('steppers').innerHTML = STEPPERS.map(([k,l]) => `
+  <div class="row" style="margin-bottom:8px"><label for="n-${k}">${l}</label>
+    <div class="step">
+      <button data-k="${k}" data-d="-1" aria-label="${l} menos 1">−1</button>
+      <input type="number" id="n-${k}" data-k="${k}">
+      <button data-k="${k}" data-d="1" aria-label="${l} mais 1">+1</button>
+    </div></div>`).join('');
+
+document.getElementById('sliders').innerHTML = SLIDERS.map(([k,l,mn,mx,st=1]) => `
+  <div style="margin-bottom:6px"><label for="s-${k}">${l}</label>
+  <input type="range" id="s-${k}" data-k="${k}" min="${mn}" max="${mx}" step="${st}"></div>`).join('');
+
+/* Sliders de enquadramento (mesma lógica dos outros: data-k liga ao estado) */
+const FIT = [['wpBlur','Desfoque do papel de parede',0,60],['zoom','Zoom (corta mais)',100,400],['panX','Mover na horizontal',-100,100],['panY','Mover na vertical',-100,100]];
+document.getElementById('fitSliders').innerHTML = FIT.map(([k,l,mn,mx]) => `
+  <div style="margin-bottom:6px"><label for="s-${k}">${l}</label>
+  <input type="range" id="s-${k}" data-k="${k}" min="${mn}" max="${mx}"></div>`).join('');
+
+/* Mostra o valor atual ao lado do rótulo de cada slider */
+function showVal(el){
+  if (el.type !== 'range') return;
+  const lab = el.previousElementSibling;               // o <label> logo acima do slider
+  let o = lab.querySelector('output');
+  if (!o){ o = document.createElement('output'); lab.append(o); lab.classList.add('lv'); }
+  o.textContent = el.value;
+}
+
+/* Copia o estado para os campos (usado depois de carregar imagem) */
+function syncInputs(){
+  document.querySelectorAll('#panel input[data-k], #panel select[data-k]').forEach(el => { el.value = state[el.dataset.k]; showVal(el); });
+}
+
+const panel = document.getElementById('panel');
+// Clique nos botões −1 / +1: soma ao valor e redesenha
+panel.addEventListener('click', e => {
+  const b = e.target.closest('button[data-d]'); if (!b || e.detail !== 0) return; // toque/clique do mouse é tratado no pointerdown (repete ao segurar); aqui só o teclado
+  state[b.dataset.k] += Number(b.dataset.d);
+  syncInputs(); schedule();
+});
+// Digitar num campo ou mexer num slider: atualiza o estado
+panel.addEventListener('input', e => {
+  const el = e.target; if (!el.dataset.k) return;
+  state[el.dataset.k] = el.tagName === 'SELECT' ? el.value : Number(el.value); // select devolve texto
+  showVal(el);
+  schedule();
+});
+
+/* Carregar imagens: createImageBitmap respeita a rotação das fotos de telemóvel */
+document.getElementById('fWall').addEventListener('change', async e => {
+  if (e.target.files[0]) { setWall(await createImageBitmap(e.target.files[0])); document.getElementById('nWall').textContent = e.target.files[0].name; setThumb('tWall', e.target.files[0]); }
+});
+
+/* Exportar: gera o PNG em tamanho real, baixa (ou abre o Compartilhar no APK) e volta ao modo de edição */
+function baixarPng(){
+  draw(true);   // exporta no tamanho real, sem a redução da prévia
+  cv.toBlob(blob => {
+    const P = window.Capacitor && Capacitor.Plugins;
+    if (P && P.Filesystem && P.Share && Capacitor.isNativePlatform()){   // dentro do APK: downloads por blob não funcionam, então abre o menu Compartilhar
+      const r = new FileReader();
+      r.onload = async () => {
+        try {
+          const f = await P.Filesystem.writeFile({ path: 'wallpaper-liquid-glass.png', data: r.result.split(',')[1], directory: 'CACHE' });
+          await P.Share.share({ files: [f.uri], dialogTitle: 'Salvar wallpaper' });   // escolha Fotos / Galeria / Arquivos
+        } catch (err) { console.error(err); }
+        draw();
+      };
+      r.readAsDataURL(blob); return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'wallpaper-liquid-glass.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    draw();                                       // restaura a pré-visualização
+  }, 'image/png');
+}
+
+/* Mudou o modo ou o tamanho personalizado: recalcula o quadro e redesenha */
+['outMode','outW','outH'].forEach(id => document.getElementById(id).addEventListener('change', () => { applySize(); syncInputs(); draw(); }));
+
+/* Segurar os botões −1 / +1 repete o ajuste (espera 350 ms, depois repete a cada 60 ms) */
+let hold;
+panel.addEventListener('pointerdown', e => {
+  const b = e.target.closest('button[data-d]'); if (!b) return;
+  const step = () => { state[b.dataset.k] += Number(b.dataset.d); syncInputs(); schedule(); };
+  step();                                                     // primeiro ajuste imediato
+  hold = setTimeout(function rep(){ step(); hold = setTimeout(rep, 60); }, 350);
+});
+['pointerup','pointercancel','pointerleave'].forEach(t => panel.addEventListener(t, () => clearTimeout(hold)));
+
+/* Gestos na prévia (mouse ou dedo): arrastar a DOCK move a Dock; arrastar o RESTO da imagem enquadra o wallpaper;
+   dois dedos (pinça) ou a roda do mouse dão zoom no wallpaper. */
+let drag = null;
+const toCanvas = e => {                                        // converte a posição da tela para pixels do canvas
+  const r = cv.getBoundingClientRect();
+  const s = Math.min(r.width/OUT.w, r.height/OUT.h);     // escala do object-fit: contain (sobram faixas nas laterais)
+  return [(e.clientX - r.left - (r.width - OUT.w*s)/2)/s, (e.clientY - r.top - (r.height - OUT.h*s)/2)/s];   // sempre em pixels do tamanho real
+};
+const dedos = new Map();                                       // ponteiros ativos (id -> posição na tela)
+let gesto = null;                                              // 'dock' | 'pan' | 'zoom' | null
+const entre = (v, a, b) => Math.min(b, Math.max(a, v));
+const folga = () => {                                          // quanto a imagem ampliada sobra além do quadro (px), na horizontal e na vertical
+  const [iw, ih] = sizeOf(wall), s = Math.max(OUT.w/iw, OUT.h/ih) * (state.zoom/100) * (1 + 4*state.wpBlur/Math.min(OUT.w, OUT.h));
+  return [Math.max(0, iw*s - OUT.w), Math.max(0, ih*s - OUT.h)];
+};
+const atualizaEnquadramento = () => {                          // espelha zoom/pan nos sliders (só esses três) e redesenha
+  ['zoom', 'panX', 'panY'].forEach(k => { const el = document.getElementById('s-' + k); if (el){ el.value = state[k]; showVal(el); } });
+  schedule();
+};
+cv.addEventListener('pointerdown', e => {
+  dedos.set(e.pointerId, [e.clientX, e.clientY]); cv.setPointerCapture(e.pointerId);
+  if (dedos.size === 2){                                       // segundo dedo: vira pinça (cancela o arrasto em curso)
+    const [a, b] = [...dedos.values()]; gesto = 'zoom';
+    drag = { d0: Math.hypot(a[0]-b[0], a[1]-b[1]) || 1, zoom0: state.zoom }; return;
+  }
+  if (dedos.size > 2) return;
+  const [px, py] = toCanvas(e), left = OUT.w/2 + state.x - state.w/2;
+  const naDock = !(px < left || px > left + state.w || py < state.y || py > state.y + state.h);
+  gesto = naDock ? 'dock' : 'pan';                             // tocou na Dock: move a Dock; senão: enquadra o wallpaper
+  drag = { px, py, x: state.x, y: state.y, panX: state.panX, panY: state.panY };
+  cv.style.cursor = 'grabbing';
+});
+cv.addEventListener('pointermove', e => {
+  if (!dedos.has(e.pointerId)) return;
+  dedos.set(e.pointerId, [e.clientX, e.clientY]);
+  if (gesto === 'zoom' && dedos.size === 2){                   // pinça: o zoom acompanha a distância entre os dedos
+    const [a, b] = [...dedos.values()];
+    state.zoom = Math.round(entre(drag.zoom0 * Math.hypot(a[0]-b[0], a[1]-b[1]) / drag.d0, 100, 400));
+    atualizaEnquadramento(); return;
+  }
+  if (!drag || dedos.size !== 1) return;
+  const [px, py] = toCanvas(e);
+  if (gesto === 'dock'){
+    state.x = Math.round(drag.x + px - drag.px);                // move pelo mesmo tanto que o ponteiro andou
+    state.y = Math.round(drag.y + py - drag.py);
+    document.getElementById('n-x').value = state.x; document.getElementById('n-y').value = state.y;   // atualiza só X e Y (mais leve que syncInputs)
+    schedule();
+  } else if (gesto === 'pan'){                                 // a imagem acompanha o dedo; pan vai de -100 a 100 (meia folga para cada lado)
+    const [fx, fy] = folga();
+    if (fx > 0) state.panX = Math.round(entre(drag.panX - (px - drag.px)/(fx/2)*100, -100, 100));
+    if (fy > 0) state.panY = Math.round(entre(drag.panY - (py - drag.py)/(fy/2)*100, -100, 100));
+    atualizaEnquadramento();
+  }
+});
+const soltou = e => {
+  dedos.delete(e.pointerId);
+  if (!dedos.size){ gesto = null; drag = null; cv.style.cursor = ''; }
+  else if (gesto === 'zoom'){ gesto = null; drag = null; }     // sobrou um dedo depois da pinça: espera levantar tudo
+};
+['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, soltou));
+cv.addEventListener('wheel', e => {                            // roda do mouse = zoom (computador)
+  e.preventDefault(); state.zoom = Math.round(entre(state.zoom * (e.deltaY < 0 ? 1.08 : 1/1.08), 100, 400)); atualizaEnquadramento();
+}, { passive: false });
+
+
+/* ---------- Configurações guardadas no aparelho (localStorage) ---------- */
+const DEFAULTS = { ...state };                       // cópia dos valores de fábrica (usada em "Repor")
+let needReset = true;                                // true = ainda falta calcular a dock inicial
+let saveTimer;
+function saveSoon(){                                 // grava 300 ms depois da última mudança
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem('dockSettings', JSON.stringify({ state, W: OUT.w, H: OUT.h, mode: document.getElementById('outMode').value })); } catch (e) {}
+  }, 300);
+}
+try {                                                // restaura a sessão anterior, se existir
+  const s = JSON.parse(localStorage.getItem('dockSettings') || 'null');
+  if (s && s.state){
+    Object.assign(state, s.state);
+    OUT.w = s.W; OUT.h = s.H;                 // tamanho em que a dock foi ajustada (applySize reescala se mudar)
+    document.getElementById('outMode').value = s.mode || 'auto';
+    document.getElementById('outW').value = s.W; document.getElementById('outH').value = s.H;
+    needReset = false;                               // mantém a dock da sessão anterior
+  }
+} catch (e) {}
+document.getElementById('btnReset').addEventListener('click', () => {
+  try { localStorage.removeItem('dockSettings'); } catch (e) {}
+  Object.assign(state, DEFAULTS);                    // volta aos valores de fábrica
+  document.getElementById('outMode').value = (typeof DO !== 'undefined' && DO) ? 'device' : 'auto';   // no APK o padrão é a tela do aparelho
+  applySize(); resetDock(); syncInputs(); draw();
+});
+
+/* Prévia compacta ou ampliada, com ícone atualizado e transição visual.
+   No modo ampliado o painel não ocupa uma área vazia; o botão continua visível. */
+const stageEl = document.querySelector('.stage'), bigBtn = document.getElementById('btnBig');
+const editorApp = document.querySelector('main.app');
+const zoomIcon = bigBtn.querySelector('svg');
+const zoomExpandPath = 'M8 3H3v5M16 21h5v-5M3 3l7 7M21 21l-7-7';
+const zoomShrinkPath = 'M3 8h5V3M21 16h-5v5M3 3l7 7M21 21l-7-7';
+function atualizarModoPrevia(big){
+  editorApp.classList.toggle('preview-expanded', big);
+  stageEl.classList.toggle('big', big);
+  panel.classList.remove('hide');
+  bigBtn.setAttribute('aria-label', big ? 'Reduzir prévia' : 'Ampliar prévia');
+  bigBtn.setAttribute('aria-pressed', String(big));
+  bigBtn.title = big ? 'Reduzir prévia' : 'Ampliar prévia';
+  if (zoomIcon) zoomIcon.innerHTML = big
+    ? '<path d="M9 3v6H3M15 21v-6h6M3 9l7-7M21 15l-7 7"/>'
+    : '<path d="M8 3H3v5M16 21h5v-5M3 3l7 7M21 21l-7-7"/>';
+  requestAnimationFrame(() => { fitPhone(); schedule(); });
+}
+bigBtn.addEventListener('click', () => atualizarModoPrevia(!editorApp.classList.contains('preview-expanded')));
+
+/* Compatibilidade: WebViews Android antigos não têm ctx.roundRect; este substituto desenha o mesmo caminho com arcos */
+if (!CanvasRenderingContext2D.prototype.roundRect){
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r){
+    r = Math.min(r, w/2, h/2);
+    this.moveTo(x+r, y); this.arcTo(x+w, y, x+w, y+h, r); this.arcTo(x+w, y+h, x, y+h, r);
+    this.arcTo(x, y+h, x, y, r); this.arcTo(x, y, x+w, y, r); this.closePath();
+  };
+}
+
+/* ---------- Botão "Alinhar sobre a tela inicial" (só aparece no APK) ---------- */
+const liveBtn = document.getElementById('btnLive');
+if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) liveBtn.style.display = 'block';
+
+/* ---------- Alinhar sobre a tela inicial REAL (sobreposição nativa do Android) ----------
+   O plugin DockOverlay (Java, instalado pelo patch-android.js) mostra o contorno da dock e uma barra de
+   ajuste POR CIMA da tela inicial verdadeira. Ao tocar em "Concluir", os valores voltam para cá. */
+const DO = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.DockOverlay;
+async function alinhar(){
+  const { granted } = await DO.hasPermission();               // precisa de "Exibir sobre outros apps"
+  if (!granted){
+    await DO.requestPermission();
+    alert('Ative "Exibir sobre outros apps" para o Dock Líquida, volte ao app e toque em Alinhar de novo.');
+    return;
+  }
+  document.getElementById('outMode').value = 'device';          // alinha na resolução física do aparelho (a mesma da tela inicial real)
+  applySize(); syncInputs(); schedule();
+  await DO.start({ x: state.x, y: state.y, w: state.w, h: state.h, r: state.r, outW: OUT.w, outH: OUT.h });   // abre a sobreposição e vai para a tela inicial
+}
+function aplicarResultado(json){                              // valores ajustados na sobreposição voltam para o app
+  const v = typeof json === 'string' ? JSON.parse(json) : json;
+  ['x','y','w','h','r'].forEach(k => { if (typeof v[k] === 'number') state[k] = v[k]; });
+  syncInputs(); schedule();
+}
+async function pegarResultado(){ const r = await DO.getResult(); if (r.result) aplicarResultado(r.result); }
+if (DO){
+  liveBtn.addEventListener('click', alinhar);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pegarResultado(); });   // ao voltar para o app
+  DO.addListener('done', d => aplicarResultado(d));
+}
+
+/* ---------- Aplicar direto como papel de parede (sem baixar nem salvar) ----------
+   Gera o PNG em tamanho real e entrega ao Android (WallpaperManager), no plugin DockOverlay. */
+async function aplicarWallpaper(){
+  if (!DO) return;
+  const alvo = await escolherAlvo();                        // pergunta onde aplicar: tela inicial, bloqueio ou ambas
+  if (!alvo) return;
+  try {
+    draw(true);                                             // tamanho real
+    const png = cv.toDataURL('image/png');
+    draw();                                                 // volta para a prévia leve
+    await DO.setWallpaper({ data: png.split(',')[1], target: alvo });
+    alert('Papel de parede aplicado!');
+  } catch (err) {
+    draw();
+    alert('Não foi possível aplicar: ' + (err && err.message ? err.message : err));
+  }
+}
+
+/* ---------- v6: interface (miniaturas, mockup, handle e botão dividido) ---------- */
+function setThumb(id, file){                                  // mostra a miniatura da imagem escolhida
+  const t = document.getElementById(id);
+  if (t._u) URL.revokeObjectURL(t._u);
+  t._u = URL.createObjectURL(file);
+  t.style.backgroundImage = 'url(' + t._u + ')'; t.classList.add('has');
+}
+
+/* Ajusta o tamanho da caixa da prévia para manter a proporção do wallpaper (sem moldura) */
+const phone = document.getElementById('phone'), pwrap = document.getElementById('pwrap');
+function fitPhone(){
+  if (!OUT.w) return;
+  const bez = 0, ar = OUT.w / OUT.h, aw = pwrap.clientWidth, ah = pwrap.clientHeight;
+  let h = ah, w = (h - bez) * ar + bez;
+  if (w > aw){ w = aw; h = (w - bez) / ar + bez; }
+  w = Math.floor(w) + 'px'; h = Math.floor(h) + 'px';
+  if (phone.style.width !== w) phone.style.width = w;         // só escreve se mudou (evita recalcular o layout à toa)
+  if (phone.style.height !== h) phone.style.height = h;
+}
+const _draw = draw;                                           // a lógica do canvas fica intacta: só ajustamos o mockup antes de desenhar
+draw = function (...a){ fitPhone(); return _draw(...a); };
+new ResizeObserver(() => { fitPhone(); schedule(); }).observe(pwrap);
+
+/* Entrega um arquivo: no APK abre o menu Compartilhar; no navegador baixa */
+function entregar(blob, nome){
+  const P = window.Capacitor && Capacitor.Plugins;
+  if (P && P.Filesystem && P.Share && Capacitor.isNativePlatform()){
+    return new Promise((ok, falha) => {
+      const r = new FileReader();
+      r.onload = async () => {
+        try {
+          const f = await P.Filesystem.writeFile({ path: nome, data: r.result.split(',')[1], directory: 'CACHE' });
+          await P.Share.share({ files: [f.uri], dialogTitle: 'Salvar' }); ok();
+        } catch (e) { falha(e); }
+      };
+      r.readAsDataURL(blob);
+    });
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return Promise.resolve();
+}
+async function baixarAltaRes(){                              // 2× o tamanho (limitado a 4096 px no lado maior)
+  const f = Math.min(2, 4096 / Math.max(OUT.w, OUT.h));
+  try {
+    draw(f);
+    const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+    draw();
+    await entregar(blob, 'wallpaper-liquid-glass-2x.png');
+  } catch (e) { draw(); alert('Não foi possível gerar em alta resolução: ' + (e.message || e)); }
+}
+function salvarProjeto(){                                      // guarda todos os ajustes num arquivo .json
+  const proj = { app: 'Dock Líquida', versao: 1, saida: { w: OUT.w, h: OUT.h }, ajustes: state };
+  return entregar(new Blob([JSON.stringify(proj, null, 2)], { type: 'application/json' }), 'projeto-dock-liquida.json');
+}
+
+/* Menu de ações do editor: quatro funções num botão compacto junto das abas. */
+const editorMoreBtn = document.getElementById('editorMoreBtn');
+const menu = document.getElementById('splitMenu');
+function fecharMenu(){
+  menu.hidden = true;
+  editorMoreBtn.setAttribute('aria-expanded', 'false');
+}
+/* Menu fixed para não ser cortado pela rolagem interna do painel. */
+function posicionarMenu(){
+  const r = editorMoreBtn.getBoundingClientRect();
+  const largura = Math.min(286, innerWidth - 20);
+  const alturaDisponivel = innerHeight - r.bottom - 20;
+  menu.style.width = largura + 'px';
+  menu.style.right = Math.max(10, innerWidth - r.right) + 'px';
+  menu.style.left = 'auto';
+  menu.style.top = (alturaDisponivel >= 205 ? r.bottom + 8 : Math.max(10,r.top - 208)) + 'px';
+  menu.style.bottom = 'auto';
+  menu.style.maxHeight = Math.max(120, alturaDisponivel >= 205 ? alturaDisponivel : r.top - 20) + 'px';
+  menu.style.overflowY = 'auto';
+}
+editorMoreBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (!menu.hidden){ fecharMenu(); return; }
+  menu.hidden = false;
+  editorMoreBtn.setAttribute('aria-expanded', 'true');
+  posicionarMenu();
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.editor-actions-wrap')) fecharMenu();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !menu.hidden){ fecharMenu(); editorMoreBtn.focus(); }
+});
+panel.addEventListener('scroll', () => { if (!menu.hidden) fecharMenu(); }, {passive:true});
+addEventListener('resize', () => { if (!menu.hidden) posicionarMenu(); });
+menu.addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]');
+  if (!b) return;
+  fecharMenu();
+  const actions = { apply: aplicarWallpaper, hires: baixarAltaRes, project: salvarProjeto,
+    open: () => document.getElementById('fProj').click() };
+  actions[b.dataset.act]?.();
+});
+if (DO) document.getElementById('actApply').hidden = false;
+
+/* Abrir um projeto salvo (.json): restaura todos os ajustes e o tamanho de saída */
+document.getElementById('fProj').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const p = JSON.parse(await f.text());
+    Object.assign(state, p.ajustes);
+    OUT.w = p.saida.w; OUT.h = p.saida.h;                       // assume o tamanho do projeto antes de recalcular
+    document.getElementById('outMode').value = 'custom';
+    document.getElementById('outW').value = OUT.w; document.getElementById('outH').value = OUT.h;
+    applySize(); syncInputs(); schedule();
+  } catch (err) { alert('Arquivo de projeto inválido.'); }
+});
+
+/* ---------- v8: abas Base | Dock, menu ☰ e cartões (inspirado no DockWalls) ---------- */
+const dtabs = document.getElementById('dtabs');
+function setTab(t){                                            // Base = Imagens + Papel de parede; Dock = Posição + Vidro
+  panel.dataset.tab = t;                                       // o CSS mostra só os cartões da aba ativa
+  [...dtabs.children].forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  panel.scrollTop = 0;
+}
+dtabs.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.t); });
+setTab('base');
+
+
+/* ---------- v9: cores dinâmicas (Material 3 / Material You) ----------
+   No APK (Android 12+) usa a paleta real do sistema. No navegador, gera a paleta a partir do wallpaper carregado.
+   Segue o tema claro/escuro do sistema. */
+const SHADES = [[0,100],[10,99],[50,95],[100,90],[200,80],[300,70],[400,60],[500,50],[600,40],[700,30],[800,20],[900,10],[1000,0]];   // [número do Android, tom Material]
+let SYS = null;                                    // paleta do sistema (a1, a2, n1, n2), se existir
+let SEED = { h: 195, c: 0.08 };                    // matiz e croma de partida (verde-petróleo)
+
+/* Conversões de cor em OKLCH (espaço perceptual, parecido com o HCT do Material) */
+const toneL = t => Math.cbrt(t > 8 ? Math.pow((t + 16) / 116, 3) : t / 903.3);     // tom Material (0 a 100) -> luminosidade OKLab
+const lin = v => { v /= 255; return v <= .04045 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+function toOklch(r, g, b){
+  r = lin(r); g = lin(g); b = lin(b);
+  const l = Math.cbrt(.4122214708*r + .5363325363*g + .0514459929*b), m = Math.cbrt(.2119034982*r + .6806995451*g + .1073969566*b), s = Math.cbrt(.0883024619*r + .2817188376*g + .6299787005*b);
+  const L = .2104542553*l + .793617785*m - .0040720468*s, a = 1.9779984951*l - 2.428592205*m + .4505937099*s, bb = .0259040371*l + .7827717662*m - .808675766*s;
+  return [L, Math.hypot(a, bb), (Math.atan2(bb, a) * 180 / Math.PI + 360) % 360];
+}
+function oklchHex(L, C, H){
+  const r = H * Math.PI / 180;
+  for (let c = C; c >= 0; c -= 0.005){             // reduz o croma até a cor caber no sRGB
+    const a = c * Math.cos(r), b = c * Math.sin(r);
+    const l = (L + .3963377774*a + .2158037573*b) ** 3, m = (L - .1055613458*a - .0638541728*b) ** 3, s = (L - .0894841775*a - 1.291485548*b) ** 3;
+    const rgb = [4.0767416621*l - 3.3077115913*m + .2309699292*s, -1.2684380046*l + 2.6097574011*m - .3413193965*s, -.0041960863*l - .7034186147*m + 1.707614701*s];
+    if (rgb.every(v => v >= -.001 && v <= 1.001) || c < .005)
+      return '#' + rgb.map(v => { v = Math.min(1, Math.max(0, v)); v = v <= .0031308 ? 12.92*v : 1.055*Math.pow(v, 1/2.4) - .055; return Math.round(v * 255).toString(16).padStart(2, '0'); }).join('');
+  }
+}
+
+/* Cor de uma paleta (a1 = primária, a2 = secundária, n1/n2 = neutras) em um tom Material */
+function tone(p, t){
+  if (SYS && SYS[p] && !(typeof PREF !== 'undefined' && PREF && PREF.cores === 'wallpaper')){                              // paleta do sistema: pega o tom mais próximo disponível
+    let best = SHADES[0];
+    for (const s of SHADES) if (Math.abs(s[1] - t) < Math.abs(best[1] - t)) best = s;
+    return SYS[p][best[0]];
+  }
+  const C = { a1: Math.min(.16, Math.max(.08, SEED.c)), a2: .04, n1: .008, n2: .016 }[p];
+  return oklchHex(toneL(t), C, SEED.h);
+}
+
+/* Papéis de cor do Material 3 ligados às variáveis do app */
+function applyTheme(){
+  const dark = (typeof PREF !== 'undefined' && PREF && PREF.tema !== 'auto') ? PREF.tema === 'escuro' : matchMedia('(prefers-color-scheme: dark)').matches, T = tone;
+  const v = dark
+    ? { '--bg': T('n1',6),  '--panel': T('n1',12), '--card': T('n1',17), '--line': T('n2',30), '--text': T('n1',90), '--mute': T('n2',80), '--acc': T('a1',80), '--acc-fg': T('a1',20),  '--sc': T('a2',30), '--stage': T('n1',4) }
+    : { '--bg': T('n1',96), '--panel': T('n1',94), '--card': T('n1',98), '--line': T('n2',80), '--text': T('n1',10), '--mute': T('n2',30), '--acc': T('a1',40), '--acc-fg': T('a1',100), '--sc': T('a2',90), '--stage': T('n1',10) };
+  for (const k in v) document.body.style.setProperty(k, v[k]);
+  document.body.style.colorScheme = dark ? 'dark' : 'light';
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+/* Cor-semente: o matiz mais presente e colorido do wallpaper (ignora quase-preto, quase-branco e cinzas) */
+function seedFrom(img){
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 48, 48);
+  const d = g.getImageData(0, 0, 48, 48).data, bins = Array.from({ length: 36 }, () => ({ w: 0, c: 0, x: 0, y: 0 }));
+  for (let i = 0; i < d.length; i += 4){
+    const [L, C, H] = toOklch(d[i], d[i+1], d[i+2]);
+    if (L < .2 || L > .95) continue;
+    const w = C * C, b = bins[Math.floor(H / 10) % 36], r = H * Math.PI / 180;   // quanto mais colorido, maior o peso
+    b.w += w; b.c += C * w; b.x += Math.cos(r) * w; b.y += Math.sin(r) * w;
+  }
+  const top = bins.reduce((a, b) => (b.w > a.w ? b : a));
+  SEED = top.w < .02 ? { h: SEED.h, c: .03 }                                      // imagem quase cinza: tema discreto
+                     : { h: (Math.atan2(top.y, top.x) * 180 / Math.PI + 360) % 360, c: top.c / top.w };
+}
+const _setWall = setWall;                          // novo wallpaper escolhido -> novo tema (o degradê padrão não conta)
+setWall = function (img){
+  _setWall(img);
+  if (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap){ try { seedFrom(img); applyTheme(); } catch (e) {} }
+};
+if (DO && DO.getSystemColors) DO.getSystemColors().then(c => { if (c && c.a1 && c.n1){ SYS = c; applyTheme(); } }).catch(() => {});   // APK: paleta real do sistema
+applyTheme();
+
+/* ---------- v10: áreas seguras reais (barras do sistema) ---------- */
+async function sincronizarInsets(){                // pede ao Android quanto do WebView fica sob as barras de status/navegação
+  if (!DO || !DO.getInsets) return;
+  try {
+    const i = await DO.getInsets(), s = document.documentElement.style;
+    s.setProperty('--sat', (i.top || 0) + 'px'); s.setProperty('--sab', (i.bottom || 0) + 'px');
+  } catch (e) {}
+}
+sincronizarInsets(); addEventListener('resize', sincronizarInsets); setTimeout(sincronizarInsets, 600);
+
+/* ---------- v11: telas, galeria com histórico e preferências ----------
+   As imagens ficam no IndexedDB do app (armazenamento privado, sobrevive a reinícios), com miniatura gerada já reduzida.
+   A navegação usa a pilha de histórico do WebView, então o botão Voltar do Android funciona entre as telas. */
+const $ = id => document.getElementById(id);
+const APP_VERSION = '1.1.0';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+
+/* Preferências guardadas no aparelho */
+const PREF_PADRAO = { tema: 'auto', cores: 'sistema', editorInicio: false, qualidade: 1, trocaAtiva: false, trocaHoras: 24, trocaAlvo: 'home', trocaGerado: null, dockIndividual: true, glassFull: false };
+var PREF = { ...PREF_PADRAO };                      // var: applyTheme() pode ser chamada antes desta linha
+try { Object.assign(PREF, JSON.parse(localStorage.getItem('dockPrefs') || '{}')); } catch (e) {}
+const salvarPrefs = () => { try { localStorage.setItem('dockPrefs', JSON.stringify(PREF)); } catch (e) {} };
+function aplicarGlassNav(){
+  document.documentElement.classList.toggle('nav-glass-full', !!PREF.glassFull);
+}
+aplicarGlassNav();
+const _pf = previewFactor;                          // "Qualidade da prévia" multiplica a resolução do desenho
+previewFactor = function () { return Math.min(1, Math.max(.15, _pf() * PREF.qualidade)); };
+
+/* Aviso rápido */
+let toastT;
+function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600); }
+
+/* ----- Banco de imagens (IndexedDB) ----- */
+const DB = (() => {
+  let dbp;
+  const abrir = () => dbp || (dbp = new Promise((ok, erro) => {
+    const r = indexedDB.open('dockliquida', 3);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains('wallpapers')) db.createObjectStore('wallpapers', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('rotationWallpapers')) db.createObjectStore('rotationWallpapers', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('albums')) db.createObjectStore('albums', { keyPath: 'id' });
+    };
+    r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error);
+  }));
+  const tx = async (modo, fn, loja = 'wallpapers') => {
+    const db = await abrir();
+    return new Promise((ok, erro) => {
+      const t = db.transaction(loja, modo), req = fn(t.objectStore(loja));
+      t.oncomplete = () => ok(req && req.result); t.onerror = t.onabort = () => erro(t.error);
+    });
+  };
+  return {
+    all: () => tx('readonly', s => s.getAll()), get: id => tx('readonly', s => s.get(id)),
+    put: rec => tx('readwrite', s => s.put(rec)), del: id => tx('readwrite', s => s.delete(id)), clear: () => tx('readwrite', s => s.clear()),
+    allRotation: () => tx('readonly', s => s.getAll(), 'rotationWallpapers'),
+    putRotation: rec => tx('readwrite', s => s.put(rec), 'rotationWallpapers'),
+    delRotation: id => tx('readwrite', s => s.delete(id), 'rotationWallpapers'),
+    clearRotation: () => tx('readwrite', s => s.clear(), 'rotationWallpapers'),
+    allAlbums: () => tx('readonly', s => s.getAll(), 'albums'),
+    putAlbum: rec => tx('readwrite', s => s.put(rec), 'albums'),
+    delAlbum: id => tx('readwrite', s => s.delete(id), 'albums')
+  };
+})();
+
+const LIMITE = 100;                                  // máximo de imagens no histórico
+let gal = [], galRotacao = [], albums = [], albumRotacaoAtual = null, albumRotacaoPainel = false, albumAtual = null, curId = null, hasWall = false, FR = {};   // gal = histórico (mais recente primeiro); FR = enquadramento de cada wallpaper
+try { FR = JSON.parse(localStorage.getItem('dockFrames') || '{}'); } catch (e) {}
+const salvarFR = () => { try { localStorage.setItem('dockFrames', JSON.stringify(FR)); } catch (e) {} };
+
+/* Dock individual: cada wallpaper guarda a PRÓPRIA Dock (posição, tamanho e vidro), como o enquadramento.
+   Os valores ficam como fração do tamanho da imagem de saída, então continuam certos se esse tamanho mudar. */
+let DK = {};                                                       // DK[id] = Dock guardada de cada wallpaper
+try { DK = JSON.parse(localStorage.getItem('dockDocks') || '{}'); } catch (e) {}
+const salvarDK = () => { try { localStorage.setItem('dockDocks', JSON.stringify(DK)); } catch (e) {} };
+const DOCK_LARG = ['x', 'w', 'r', 'bevel', 'thick', 'blur', 'wpBlur'], DOCK_ALT = ['y', 'h'], DOCK_PURO = ['ior', 'scale', 'chroma', 'shine', 'angle', 'profile'];
+const CAMPOS_DOCK = [...DOCK_LARG, ...DOCK_ALT, ...DOCK_PURO];
+const dockAtual = () => {                                         // Dock aberta agora -> frações (medidas em px viram % da largura/altura)
+  const d = {}; DOCK_LARG.forEach(k => d[k] = state[k] / OUT.w); DOCK_ALT.forEach(k => d[k] = state[k] / OUT.h); DOCK_PURO.forEach(k => d[k] = state[k]); return d;
+};
+const aplicarDock = d => {                                        // frações guardadas -> px no tamanho de saída atual
+  DOCK_LARG.forEach(k => { if (d[k] != null) state[k] = Math.round(d[k] * OUT.w); });
+  DOCK_ALT.forEach(k => { if (d[k] != null) state[k] = Math.round(d[k] * OUT.h); });
+  DOCK_PURO.forEach(k => { if (d[k] != null) state[k] = d[k]; });
+};
+async function carregarGaleria(){
+  try {
+    gal = (await DB.all()).sort((a, b) => b.added - a.added);
+    galRotacao = (await DB.allRotation()).sort((a, b) => b.added - a.added);
+    albums = await DB.allAlbums();
+  } catch (e) { gal = []; galRotacao = []; albums = []; toast('Não foi possível ler as galerias.'); }
+}
+
+/* Identificador = hash dos primeiros 256 KB + tamanho: a mesma foto escolhida de novo não duplica */
+async function idDe(f){
+  if (window.crypto && crypto.subtle){
+    const h = await crypto.subtle.digest('SHA-256', await f.slice(0, 262144).arrayBuffer());
+    return [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('') + '-' + f.size;
+  }
+  return f.name + '-' + f.size + '-' + f.lastModified;
+}
+async function miniatura(f){                         // decodifica já reduzido (360 px de largura): não carrega a foto inteira só para a miniatura
+  const bmp = await createImageBitmap(f, { resizeWidth: 360, resizeQuality: 'medium' });
+  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+  c.getContext('2d').drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+  return new Promise(ok => c.toBlob(ok, 'image/jpeg', .82));
+}
+
+async function adicionar(arquivos){
+  let ultimo = null, falhas = 0;
+  for (const f of arquivos){
+    try {
+      if (!/^image\//.test(f.type)) throw new Error('não é imagem');
+      const id = await idDe(f), antigo = gal.find(g => g.id === id);
+      await DB.put(antigo ? { ...antigo, added: Date.now() }                     // já existe: só sobe para o topo
+                          : { id, name: f.name || 'imagem', blob: f, thumb: await miniatura(f), added: Date.now() });
+      await carregarGaleria();
+      ultimo = id;
+    } catch (e) { falhas++; }
+  }
+  for (const extra of gal.slice(LIMITE)) if (extra.id !== curId){ await DB.del(extra.id).catch(() => {}); delete FR[extra.id]; delete DK[extra.id]; }   // mantém só os 20 mais recentes
+  salvarFR(); salvarDK(); await carregarGaleria();
+  const aviso = falhas ? (falhas === arquivos.length ? 'Não foi possível ler essa imagem.' : falhas + ' imagem(ns) não puderam ser lidas.') : '';
+  const trocou = ultimo ? await selecionar(ultimo) : false;       // um único aviso: o de seleção e o de falha não se apagam
+  if (trocou || aviso) toast([trocou ? 'Wallpaper selecionado.' : '', aviso].filter(Boolean).join(' '));
+  redesenharTelas();
+}
+
+async function adicionarRotacao(arquivos){
+  let adicionadas = 0, falhas = 0;
+  for (const f of arquivos){
+    try {
+      if (!/^image\//.test(f.type)) throw new Error('não é imagem');
+      const id = await idDe(f);
+      const antigo = galRotacao.find(g => g.id === id);
+      const existenteFixo = gal.find(g => g.id === id);
+      const recBase = antigo || existenteFixo;
+      await DB.putRotation(recBase
+        ? { ...recBase, added: Date.now() }
+        : { id, name: f.name || 'imagem', blob: f, thumb: await miniatura(f), added: Date.now() });
+      adicionadas++;
+    } catch (e) { falhas++; }
+  }
+  await carregarGaleria();
+  const msg = adicionadas ? adicionadas + (adicionadas === 1 ? ' imagem adicionada à galeria automática.' : ' imagens adicionadas à galeria automática.') : 'Nenhuma imagem foi adicionada.';
+  toast(falhas ? msg + ' ' + falhas + ' falha(s).' : msg);
+  PREF.trocaGerado = null; salvarPrefs();
+  redesenharTelas(); desenharConfig();
+}
+
+// Importar wallpapers já configurados da galeria fixa
+const rImportarPainel = $('rImportarPainel');
+const rImportarGrid = $('rImportarGrid');
+
+$('rImportar').addEventListener('click', () => {
+  const abrir = rImportarPainel.hidden;
+  rImportarPainel.hidden = !abrir;
+  $('rImportar').setAttribute('aria-expanded', String(abrir));
+
+  if (!abrir) return;
+
+  const disponiveis = gal.filter(
+    g => !galRotacao.some(r => r.id === g.id)
+  );
+
+  rImportarGrid.innerHTML = disponiveis.length
+    ? disponiveis.map(g => `
+      <label class="gi" style="position:relative;cursor:pointer">
+        <img src="${urlDe(g)}" alt="${esc(g.name)}">
+        <input
+          type="checkbox"
+          class="rImportarCheck"
+          value="${esc(g.id)}"
+          style="position:absolute;top:8px;right:8px;width:22px;height:22px"
+        >
+      </label>
+    `).join('')
+    : '<p class="info">Todos os wallpapers já estão na galeria automática.</p>';
+});
+
+$('rImportarConfirmar').addEventListener('click', async () => {
+  const ids = [...rImportarGrid.querySelectorAll(
+    '.rImportarCheck:checked'
+  )].map(c => c.value);
+
+  if (!ids.length) {
+    toast('Selecione pelo menos um wallpaper.');
+    return;
+  }
+
+  let adicionados = 0;
+
+  try {
+    for (const id of ids) {
+      const rec = gal.find(g => g.id === id);
+      if (!rec) continue;
+
+      await DB.putRotation({
+        ...rec,
+        added: Date.now() + adicionados
+      });
+
+      adicionados++;
+    }
+
+    await carregarGaleria();
+
+    // Não modifica DK[id] nem FR[id].
+    // Apenas marca as imagens automáticas como desatualizadas.
+    PREF.trocaGerado = null;
+    salvarPrefs();
+
+    rImportarPainel.hidden = true;
+    $('rImportar').setAttribute('aria-expanded', 'false');
+
+    redesenharTelas();
+    desenharConfig();
+
+    toast(adicionados + ' wallpaper(s) adicionados.');
+  } catch (e) {
+    await carregarGaleria();
+    PREF.trocaGerado = null;
+    salvarPrefs();
+    redesenharTelas();
+    toast('Não foi possível concluir a importação.');
+  }
+});
+async function removerRotacao(id){
+  try { await DB.delRotation(id); } catch (e) { toast('Erro ao remover wallpaper.'); return; }
+  await carregarGaleria();
+  for (const a of albunsRotacao()) {
+    if (!(a.ids || []).includes(id)) continue;
+    a.ids = a.ids.filter(v => v !== id);
+    if (a.coverId === id) a.coverId = a.ids[0] || null;
+    await DB.putAlbum(a).catch(() => {});
+  }
+  PREF.trocaGerado = null; salvarPrefs();
+  redesenharTelas();
+  toast('Removida da galeria automática.');
+}
+
+function guardarEnquadramento(){                                  // guarda o enquadramento (e a Dock, se for individual) do wallpaper aberto
+  if (!curId) return;
+  FR[curId] = { zoom: state.zoom, panX: state.panX, panY: state.panY }; salvarFR();
+  if (PREF.dockIndividual && OUT.w){ DK[curId] = dockAtual(); salvarDK(); }
+}
+async function selecionar(id){
+  guardarEnquadramento();                            // salva o enquadramento do wallpaper que está saindo
+  const rec = gal.find(g => g.id === id) || galRotacao.find(g => g.id === id);
+  if (!rec) return false;
+  try {
+    const bmp = await createImageBitmap(rec.blob);
+    setWall(bmp);                                    // troca o fundo (e o tema, se as cores vierem do wallpaper)
+    const fr = FR[id] || { zoom: 100, panX: 0, panY: 0 };
+    state.zoom = fr.zoom; state.panX = fr.panX; state.panY = fr.panY;   // enquadramento guardado desse wallpaper
+    if (PREF.dockIndividual){                        // Dock individual: usa a Dock guardada desse wallpaper (ou começa com a que está aberta)
+      if (DK[id]) aplicarDock(DK[id]); else { DK[id] = dockAtual(); salvarDK(); }
+    }
+    curId = id; hasWall = true;
+    try { localStorage.setItem('dockCurrent', id); } catch (e) {}
+    $('nWall').textContent = rec.name; setThumb('tWall', rec.blob);
+    syncInputs(); schedule();
+    return true;
+  } catch (e) {                                      // arquivo indisponível ou corrompido
+    await DB.del(id).catch(() => {}); delete FR[id]; delete DK[id]; salvarFR(); salvarDK(); await carregarGaleria();
+    toast('Imagem indisponível. Removida do histórico.'); redesenharTelas();
+    return false;
+  }
+}
+async function remover(id){
+  try { await DB.del(id); } catch (e) {}
+  // Se o mesmo wallpaper existe na Galeria automática, preserve seus ajustes individuais.
+  if (!galRotacao.some(g => g.id === id)) {
+    delete FR[id]; delete DK[id]; salvarFR(); salvarDK();
+    if (id === curId){ curId = null; try { localStorage.removeItem('dockCurrent'); } catch (e) {} }
+  }
+  await carregarGaleria();
+  for (const a of albunsFixos()) if ((a.ids || []).includes(id)) { a.ids = a.ids.filter(v => v !== id); if (a.coverId === id) a.coverId = a.ids[0] || null; await DB.putAlbum(a).catch(() => {}); }
+  redesenharTelas(); toast('Removida do histórico.');
+}
+
+/* Salvar o enquadramento enquanto ele é ajustado (aproveita o gancho de salvamento que já existe) */
+const _saveSoon = saveSoon; let frT;
+saveSoon = function(){ _saveSoon(); clearTimeout(frT); frT = setTimeout(guardarEnquadramento, 700); };
+$('btnFitReset').addEventListener('click', () => { state.zoom = 100; state.panX = 0; state.panY = 0; syncInputs(); schedule(); });
+
+/* ----- Telas ----- */
+let urls = [];
+const urlDe = rec => { const u = URL.createObjectURL(rec.thumb); urls.push(u); return u; };
+const limparUrls = () => { urls.forEach(u => URL.revokeObjectURL(u)); urls = []; };
+
+function desenharHome(){
+  limparUrls();
+  $('heroImg').hidden = !hasWall; $('heroEmpty').hidden = hasWall;
+  if (hasWall){ draw(); $('heroImg').src = cv.toDataURL('image/jpeg', .85); draw(); }   // foto da prévia atual, com a Dock
+  $('hPick').textContent = hasWall ? 'Trocar wallpaper' : 'Escolher wallpaper';
+  $('hRecent').innerHTML = gal.length
+    ? gal.slice(0, 8).map(g => `<button class="rc${g.id === curId ? ' sel' : ''}" type="button" data-id="${esc(g.id)}" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""></button>`).join('')
+    : '<div class="none">Os wallpapers que você escolher aparecem aqui.</div>';
+}
+function desenharGaleria(){
+  limparUrls();
+  $('gEmpty').hidden = gal.length > 0;
+  desenharAlbums();
+  const exibidos = albumAtual
+    ? gal.filter(g => (albunsFixos().find(a => a.id === albumAtual)?.ids || []).includes(g.id))
+    : imagensSemAlbum(gal, albunsFixos());
+  $('gEmpty').hidden = !!albumAtual || gal.length > 0;
+  $('gGrid').innerHTML = exibidos.map(g => `<div class="gi${g.id === curId ? ' sel' : ''}" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Usar ${esc(g.name)}"><img src="${urlDe(g)}" alt=""><i class="chk">&#10003;</i><button class="x" type="button" aria-label="Remover do histórico">&times;</button></div>`).join('');
+}
+
+const albunsFixos = () => albums.filter(a => a.type !== 'rotation');
+function imagensSemAlbum(lista, colecao){
+  const organizadas = new Set(colecao.flatMap(a => Array.isArray(a.ids) ? a.ids : []));
+  return lista.filter(g => !organizadas.has(g.id));
+}
+let albumPainelAberto = false;
+$('albumSelecionar').addEventListener('click', () => {
+  albumPainelAberto = !albumPainelAberto;
+  desenharGaleria();
+});
+/* Álbuns organizam referências às imagens da galeria fixa; não duplicam blobs nem alteram DK/FR. */
+function desenharAlbums(){
+  const atual = albunsFixos().find(a => a.id === albumAtual);
+  if (albumAtual && !atual) albumAtual = null;
+  $('albumVoltar').hidden = !albumAtual;
+  $('albumEditar').hidden = !atual;
+  $('albumExcluir').hidden = !atual;
+  $('albumTitulo').textContent = atual ? atual.name : 'Meus álbuns';
+  $('albumLista').hidden = !!albumAtual;
+  $('albumLista').innerHTML = albunsFixos().map(a => {
+    const primeiro = gal.find(g => g.id === a.coverId) || gal.find(g => (a.ids || []).includes(g.id));
+    return `<button type="button" class="album-card" data-album="${esc(a.id)}">${primeiro ? `<img src="${urlDe(primeiro)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
+  }).join('');
+  $('albumSelecionar').hidden = !atual;
+  $('albumGerenciar').hidden = !atual || !albumPainelAberto;
+  $('albumSelecionar').setAttribute('aria-expanded', String(!!albumAtual && albumPainelAberto));
+  $('albumSelecionar').textContent = albumPainelAberto ? 'Fechar seleção de wallpapers' : '+ Adicionar wallpapers ao álbum';
+  if (atual && albumPainelAberto){
+    $('albumGerenciar').innerHTML = gal.map(g => `<label class="album-choice"><input type="checkbox" data-photo="${esc(g.id)}" ${(atual.ids || []).includes(g.id) ? 'checked' : ''}><img src="${urlDe(g)}" alt=""><span>${esc(g.name)}</span><button type="button" class="album-cover" data-cover="${esc(g.id)}" ${atual.coverId === g.id ? 'disabled' : ''}>${atual.coverId === g.id ? 'Capa atual' : 'Usar capa'}</button></label>`).join('') || '<p class="info">Adicione imagens à galeria para organizar este álbum.</p>';
+  }
+}
+$('albumCriar').addEventListener('click', async () => {
+  const name = prompt('Nome do novo álbum:')?.trim(); if (!name) return;
+  const a = {id: 'album-' + Date.now() + '-' + Math.random().toString(36).slice(2,7), name: name.slice(0,60), ids: [], coverId: null};
+  try { await DB.putAlbum(a); albums.push(a); albumAtual = a.id; albumPainelAberto = false; desenharGaleria(); toast('Álbum criado.'); }
+  catch(e){ toast('Não foi possível criar o álbum.'); }
+});
+$('albumLista').addEventListener('click', e => {
+  const b = e.target.closest('[data-album]'); if (!b) return;
+  albumAtual = b.dataset.album; albumPainelAberto = false; desenharGaleria();
+});
+$('albumVoltar').addEventListener('click', () => {albumAtual = null; albumPainelAberto = false; desenharGaleria();});
+$('albumEditar').addEventListener('click', async () => {
+  const a = albums.find(a => a.id === albumAtual); if (!a) return;
+  const name = prompt('Renomear álbum:', a.name)?.trim(); if (!name) return;
+  a.name = name.slice(0,60);
+  try { await DB.putAlbum(a); desenharGaleria(); toast('Álbum renomeado.'); } catch(e){toast('Erro ao renomear álbum.');}
+});
+$('albumExcluir').addEventListener('click', async () => {
+  const a = albums.find(a => a.id === albumAtual); if (!a || !confirm(`Excluir o álbum "${a.name}"? As imagens serão mantidas.`)) return;
+  try { await DB.delAlbum(a.id); albums = albums.filter(v => v.id !== a.id); albumAtual = null; albumPainelAberto = false; desenharGaleria(); toast('Álbum excluído; imagens preservadas.'); }
+  catch(e){toast('Não foi possível excluir o álbum.');}
+});
+$('albumGerenciar').addEventListener('change', async e => {
+  const cb = e.target.closest('input[data-photo]'); if (!cb) return;
+  const a = albums.find(a => a.id === albumAtual); if (!a) return;
+  const ids = new Set(a.ids || []); cb.checked ? ids.add(cb.dataset.photo) : ids.delete(cb.dataset.photo);
+  a.ids = [...ids]; if (!ids.has(a.coverId)) a.coverId = a.ids[0] || null;
+  try { await DB.putAlbum(a); desenharGaleria(); } catch(err){toast('Erro ao salvar álbum.');}
+});
+$('albumGerenciar').addEventListener('click', async e => {
+  const b = e.target.closest('[data-cover]'); if (!b) return;
+  const a = albums.find(a => a.id === albumAtual); if (!a) return;
+  if (!(a.ids || []).includes(b.dataset.cover)){toast('Marque a imagem antes de definir a capa.'); return;}
+  a.coverId = b.dataset.cover;
+  try {await DB.putAlbum(a); desenharGaleria(); toast('Capa atualizada.');}catch(err){toast('Erro ao salvar capa.');}
+});
+
+const albunsRotacao = () => albums.filter(a => a.type === 'rotation');
+const selecionadosRotacao = () => {
+  try { return JSON.parse(localStorage.getItem('dockSlideAlbums') || '[]').filter(x => typeof x === 'string').slice(0,2); }
+  catch { return []; }
+};
+function guardarSlide(ids) {
+  localStorage.setItem('dockSlideAlbums', JSON.stringify(ids.slice(0,2)));
+  PREF.trocaGerado = null;
+  salvarPrefs();
+}
+function imagensDoSlide(){
+  const ids = selecionadosRotacao();
+  if (!ids.length) return galRotacao;
+  const validos = albunsRotacao().filter(a => ids.includes(a.id));
+  if (!validos.length) return galRotacao;
+  const conjunto = new Set(validos.flatMap(a => a.ids || []));
+  return galRotacao.filter(g => conjunto.has(g.id));
+}
+function desenharAlbunsRotacao(){
+  const atual = albunsRotacao().find(a => a.id === albumRotacaoAtual);
+  if (albumRotacaoAtual && !atual) albumRotacaoAtual = null;
+  $('rAlbumTitulo').textContent = atual ? atual.name : 'Álbuns automáticos';
+  ['rAlbumVoltar','rAlbumEditar','rAlbumExcluir'].forEach(id => $(id).hidden = !atual);
+  $('rAlbumLista').hidden = !!atual;
+  $('rAlbumLista').innerHTML = albunsRotacao().map(a => {
+    const rec = galRotacao.find(g => g.id === a.coverId && (a.ids || []).includes(g.id)) || galRotacao.find(g => (a.ids || []).includes(g.id));
+    return `<button type="button" class="album-card" data-ralbum="${esc(a.id)}">${rec ? `<img src="${urlDe(rec)}" alt="">` : '<span class="album-placeholder">▧</span>'}<span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></button>`;
+  }).join('');
+  $('rAlbumSelecionar').hidden = !atual;
+  $('rAlbumSelecionar').textContent = albumRotacaoPainel ? 'Fechar seleção' : '+ Adicionar wallpapers ao álbum';
+  $('rAlbumGerenciar').hidden = !atual || !albumRotacaoPainel;
+  if (atual && albumRotacaoPainel){
+    $('rAlbumGerenciar').innerHTML = galRotacao.map(g => `<div class="album-choice"><label><input type="checkbox" data-rphoto="${esc(g.id)}" ${(atual.ids || []).includes(g.id) ? 'checked' : ''}> <img src="${urlDe(g)}" alt=""> <span>${esc(g.name)}</span></label><button type="button" class="album-cover" data-rcover="${esc(g.id)}" ${atual.coverId === g.id ? 'disabled' : ''}>${atual.coverId === g.id ? 'Capa atual' : 'Usar capa'}</button></div>`).join('') || '<p class="info">Adicione wallpapers à galeria automática.</p>';
+  }
+  const ids = selecionadosRotacao();
+  $('rSlideLista').innerHTML = albunsRotacao().map(a => `<label class="slide-album-option"><input type="checkbox" data-slide="${esc(a.id)}" ${ids.includes(a.id) ? 'checked' : ''}><span>${esc(a.name)}</span><small>${(a.ids || []).length} imagens</small></label>`).join('') || '<p class="info">Crie álbuns para escolher a apresentação.</p>';
+  $('rSlideInfo').textContent = ids.length ? `${ids.length}/2 álbuns selecionados · ${imagensDoSlide().length} wallpapers` : 'Todos os wallpapers';
+}
+$('rAlbumCriar').addEventListener('click', async () => {
+  const name = prompt('Nome do álbum automático:')?.trim(); if (!name) return;
+  const a = {id:'rot-album-'+Date.now()+'-'+Math.random().toString(36).slice(2,7), type:'rotation', name:name.slice(0,60), ids:[], coverId:null};
+  try {await DB.putAlbum(a); albums.push(a); albumRotacaoAtual=a.id; albumRotacaoPainel=false; desenharGaleriaRotacao();}catch(e){toast('Não foi possível criar o álbum.');}
+});
+$('rAlbumLista').addEventListener('click', e => {
+  const b=e.target.closest('[data-ralbum]'); if(!b)return;
+  albumRotacaoAtual=b.dataset.ralbum; albumRotacaoPainel=false; desenharGaleriaRotacao();
+});
+$('rAlbumVoltar').addEventListener('click',()=>{albumRotacaoAtual=null;albumRotacaoPainel=false;desenharGaleriaRotacao();});
+$('rAlbumSelecionar').addEventListener('click',()=>{albumRotacaoPainel=!albumRotacaoPainel;desenharGaleriaRotacao();});
+$('rAlbumEditar').addEventListener('click',async()=>{
+  const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a)return;
+  const name=prompt('Novo nome:',a.name)?.trim();if(!name)return;
+  a.name=name.slice(0,60);await DB.putAlbum(a);desenharGaleriaRotacao();
+});
+$('rAlbumExcluir').addEventListener('click',async()=>{
+  const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a||!confirm(`Excluir o álbum "${a.name}"? Os wallpapers serão mantidos.`))return;
+  await DB.delAlbum(a.id);albums=albums.filter(v=>v.id!==a.id);
+  guardarSlide(selecionadosRotacao().filter(id=>id!==a.id));
+  albumRotacaoAtual=null;albumRotacaoPainel=false;desenharGaleriaRotacao();
+});
+$('rAlbumGerenciar').addEventListener('change',async e=>{
+  const id=e.target.dataset.rphoto;if(!id)return;
+  const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a)return;
+  a.ids=e.target.checked?[...new Set([...(a.ids||[]),id])]:(a.ids||[]).filter(v=>v!==id);
+  if(!a.ids.includes(a.coverId))a.coverId=a.ids[0]||null;
+  await DB.putAlbum(a);PREF.trocaGerado=null;salvarPrefs();desenharGaleriaRotacao();
+});
+$('rAlbumGerenciar').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-rcover]');if(!b)return;
+  const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a)return;
+  if(!(a.ids||[]).includes(b.dataset.rcover)){toast('Adicione a imagem ao álbum primeiro.');return;}
+  a.coverId=b.dataset.rcover;await DB.putAlbum(a);desenharGaleriaRotacao();
+});
+$('rSlideLista').addEventListener('change',e=>{
+  const id=e.target.dataset.slide;if(!id)return;
+  let ids=selecionadosRotacao();
+  if(e.target.checked && !ids.includes(id)){
+    if(ids.length>=2){e.target.checked=false;toast('Escolha no máximo 2 álbuns.');return;}
+    ids.push(id);
+  }else if(!e.target.checked)ids=ids.filter(v=>v!==id);
+  guardarSlide(ids);desenharGaleriaRotacao();
+});
+function desenharGaleriaRotacao(){
+  limparUrls();
+  desenharAlbunsRotacao();
+
+  const exibidos = albumRotacaoAtual
+    ? galRotacao.filter(g => (albunsRotacao().find(a => a.id === albumRotacaoAtual)?.ids || []).includes(g.id))
+    : imagensSemAlbum(galRotacao, albunsRotacao());
+  $('rEmpty').hidden = !!albumRotacaoAtual || galRotacao.length > 0;
+  $('rGrid').innerHTML = exibidos.map(g => `<div class="gi" data-id="${esc(g.id)}"><img src="${urlDe(g)}" alt=""><button class="x" type="button" aria-label="Remover da galeria automática">&times;</button></div>`).join('');
+}
+const marcarSeg = (id, v) => [...$(id).children].forEach(b => b.classList.toggle('on', b.dataset.v === v));
+function desenharConfig(){
+  marcarSeg('sTema', PREF.tema); marcarSeg('sCores', PREF.cores); marcarSeg('sQual', String(PREF.qualidade));
+  $('sEditor').checked = PREF.editorInicio;
+  $('sIndiv').checked = PREF.dockIndividual;
+  $('sGlassFull').checked = !!PREF.glassFull;
+  $('rowCores').hidden = !SYS;                       // a paleta do sistema só existe no APK (Android 12+)
+  $('sHistN').textContent = gal.length + (gal.length === 1 ? ' imagem' : ' imagens');
+  $('sHistClear').disabled = !gal.length;
+  $('sVer').textContent = APP_VERSION;
+  desenharTroca();
+}
+const VISTAS = { home: ['v-home', desenharHome], gallery: ['v-gallery', desenharGaleria], 'rotation-gallery': ['v-rotation-gallery', desenharGaleriaRotacao], settings: ['v-settings', desenharConfig] };
+let vista = 'home';
+function atualizarIndicadorNav(){
+  const nav = $('liquidNav');
+  if (!nav || nav.hidden) return;
+  const ativo = nav.querySelector('button.active');
+  if (!ativo) return;
+  nav.style.setProperty('--indicator-x', ativo.offsetLeft + 'px');
+  nav.style.setProperty('--indicator-w', ativo.offsetWidth + 'px');
+}
+addEventListener('resize', atualizarIndicadorNav);
+function mostrar(nome){
+  vista = VISTAS[nome] ? nome : (nome === 'editor' ? 'editor' : 'home');
+  for (const k in VISTAS) $(VISTAS[k][0]).classList.toggle('on', k === vista);
+  // A barra fica visível nas telas principais e sai do caminho no editor.
+  const nav = $('liquidNav');
+  nav.hidden = vista === 'editor';
+  nav.querySelectorAll('[data-tab]').forEach(btn => {
+    const ativo = btn.dataset.tab === vista;
+    btn.classList.toggle('active', ativo);
+    if (ativo) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
+  });
+  atualizarIndicadorNav();
+  requestAnimationFrame(atualizarIndicadorNav);
+  if (VISTAS[vista]) VISTAS[vista][1]();
+  else { fitPhone(); schedule(); }                   // voltou ao editor
+}
+const redesenharTelas = () => { if (VISTAS[vista]) VISTAS[vista][1](); };
+function ir(nome, substituir){
+  if (nome === vista && !substituir) return;
+  history[substituir ? 'replaceState' : 'pushState']({ v: nome }, '');
+  mostrar(nome);
+}
+const voltar = () => { if (history.length > 1) history.back(); else ir('home', true); };
+addEventListener('popstate', e => mostrar((e.state && e.state.v) || 'home'));
+
+document.addEventListener('click', e => {           // botões de navegação de todas as telas
+  const go = e.target.closest('[data-go]'), back = e.target.closest('[data-back]');
+  if (go) ir(go.dataset.go);
+  if (back) voltar();
+});
+$('eBack').addEventListener('click', () => ir('home'));
+$('hDock').addEventListener('click', () => ir('editor'));
+['hPick', 'gAdd', 'gAdd2'].forEach(id => $(id).addEventListener('click', () => $('gFile').click()));   // seletor de fotos do Android: não pede permissão de armazenamento
+$('gFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionar(fs); });
+['rAdd', 'rAdd2'].forEach(id => $(id).addEventListener('click', () => $('rFile').click()));
+$('rFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionarRotacao(fs); });
+$('fWall').addEventListener('change', e => {         // o cartão "Papel de parede final" do editor também passa pelo histórico
+  e.stopImmediatePropagation(); const fs = [...e.target.files]; e.target.value = ''; if (fs.length) adicionar(fs);
+}, true);
+$('hRecent').addEventListener('click', async e => { const b = e.target.closest('.rc'); if (b && await selecionar(b.dataset.id)) desenharHome(); });
+$('gGrid').addEventListener('click', async e => {
+  const item = e.target.closest('.gi'); if (!item) return;
+  if (e.target.closest('.x')){ remover(item.dataset.id); return; }
+  if (await selecionar(item.dataset.id)){ toast('Wallpaper selecionado.'); voltar(); }
+});
+$('gGrid').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('gi')) e.target.click(); });
+$('rGrid').addEventListener('click', async e => {
+  const item = e.target.closest('.gi');
+  if (!item) return;
+
+  if (e.target.closest('.x')) {
+    removerRotacao(item.dataset.id);
+    return;
+  }
+
+  if (await selecionar(item.dataset.id)) {
+    toast('Wallpaper selecionado.');
+    ir('editor');
+  }
+});
+
+/* Configurações */
+$('sTema').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.tema = b.dataset.v; salvarPrefs(); applyTheme(); marcarSeg('sTema', PREF.tema); } });
+$('sCores').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.cores = b.dataset.v; salvarPrefs(); applyTheme(); marcarSeg('sCores', PREF.cores); } });
+$('sQual').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ PREF.qualidade = +b.dataset.v; salvarPrefs(); marcarSeg('sQual', b.dataset.v); schedule(); } });
+$('sEditor').addEventListener('change', e => { PREF.editorInicio = e.target.checked; salvarPrefs(); });
+$('sGlassFull').addEventListener('change', e => { PREF.glassFull = e.target.checked; salvarPrefs(); aplicarGlassNav(); });
+$('sIndiv').addEventListener('change', e => {
+  PREF.dockIndividual = e.target.checked; salvarPrefs();
+  if (PREF.dockIndividual && curId){ DK[curId] = dockAtual(); salvarDK(); }   // ao ligar, o wallpaper aberto guarda a Dock que está aberta
+  toast(PREF.dockIndividual ? 'Cada wallpaper guarda a própria Dock.' : 'Todos os wallpapers usam a mesma Dock.');
+});
+$('sHistClear').addEventListener('click', async () => {
+  if (!gal.length || !confirm('Apagar todo o histórico de wallpapers? A imagem aberta no editor continua lá.')) return;
+  try { await DB.clear(); } catch (e) {}
+  FR = {}; DK = {}; salvarFR(); salvarDK(); curId = null; try { localStorage.removeItem('dockCurrent'); } catch (e) {}
+  await carregarGaleria(); desenharConfig(); toast('Histórico apagado.');
+});
+$('sRestore').addEventListener('click', () => {
+  if (!confirm('Restaurar todas as configurações para o padrão? O histórico de wallpapers não é apagado.')) return;
+  const tinhaTroca = PREF.trocaAtiva || PREF.trocaGerado;
+  Object.assign(PREF, PREF_PADRAO); salvarPrefs(); DK = {}; salvarDK();     // cada wallpaper volta a começar com a Dock padrão
+  if (tinhaTroca && trocaOk()) desligarTroca().catch(() => {});      // a troca automática também volta ao padrão (desligada)
+  $('btnReset').click();                             // reaproveita a restauração que já existia (Dock, vidro, tamanho)
+  aplicarGlassNav();
+  applyTheme(); desenharConfig(); toast('Configurações restauradas.');
+});
+
+/* Inicialização: a Home é sempre a primeira tela; não mostrar o editor enquanto o IndexedDB carrega. */
+(async () => {
+  try {
+    await carregarGaleria();
+    let id = null;
+    try { id = localStorage.getItem('dockCurrent'); } catch (e) {}
+    if (id && (gal.some(g => g.id === id) || galRotacao.some(g => g.id === id))) {
+      try { await selecionar(id); } catch (e) { console.warn('Wallpaper anterior indisponível', e); }
+    }
+  } catch (e) {
+    console.error('Falha ao carregar galeria na inicialização', e);
+    const msg = $('startupMessage');
+    if (msg) msg.textContent = 'Não foi possível carregar a galeria.';
+  } finally {
+    history.replaceState({ v: 'home' }, '');
+    try { mostrar('home'); } catch (e) { console.error('Falha ao abrir Início', e); }
+    document.documentElement.classList.remove('app-booting');
+    document.documentElement.classList.add('app-ready');
+    const splash = $('startupSplash');
+    if (splash) {
+      splash.addEventListener('transitionend', () => splash.remove(), { once:true });
+      setTimeout(() => splash.remove(), 700);
+    }
+  }
+})();
+applyTheme();                                        // aplica de novo agora que as preferências existem
+
+/* ---------- v12: sem print de referência; destino do wallpaper escolhido na hora de aplicar ---------- */
+function escolherAlvo(){                             // caixa "Aplicar em": devolve 'home', 'lock', 'both' ou null (cancelou)
+  return new Promise(ok => {
+    const d = $('alvoDlg'); d.hidden = false;
+    const fim = v => { d.hidden = true; d.onclick = null; ok(v); };
+    d.onclick = e => { const b = e.target.closest('[data-alvo]'); if (b) fim(b.dataset.alvo || null); else if (e.target === d) fim(null); };
+  });
+}
+if (DO && !localStorage.getItem('dockSettings')) $('outMode').value = 'device';   // primeira vez no APK: o PNG sai na resolução da tela do aparelho
+
+/* ---------- Troca automática de wallpaper (só no APK) ----------
+   O vidro da Dock é desenhado aqui, em JavaScript, que não roda com o app fechado. Por isso o app GERA as imagens prontas
+   (cada wallpaper do histórico + a Dock atual, em tamanho real) e entrega ao Android, que troca sozinho a cada N horas
+   com o WorkManager (agendador do sistema: funciona com o app fechado e depois de reiniciar o celular). */
+const trocaOk = () => !!(DO && DO.scheduleRotation);
+const hashTroca = () => JSON.stringify([OUT.w, OUT.h, SCALED.map(k => state[k]), ['ior', 'scale', 'chroma', 'shine', 'angle', 'profile'].map(k => state[k]),
+                                         imagensDoSlide().map(g => [g.id, FR[g.id] || null]), PREF.dockIndividual, imagensDoSlide().map(g => DK[g.id] || null)]);   // tudo o que muda o resultado das imagens
+const trocaDesatualizada = () => !PREF.trocaGerado || PREF.trocaGerado.hash !== hashTroca();
+const paraBase64 = blob => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result.split(',')[1]); r.readAsDataURL(blob); });
+const mostrarProgresso = (sub) => { $('progS').textContent = sub; $('progDlg').hidden = false; };
+const esconderProgresso = () => { $('progDlg').hidden = true; };
+
+/* Desenha UM wallpaper da galeria automática com a Dock atual, em tamanho real (JPEG), sem mexer no que está aberto no editor. */
+async function renderizarItem(rec){
+  const bmp = await createImageBitmap(rec.blob);
+  const salvo = { wall, zoom: state.zoom, panX: state.panX, panY: state.panY, dock: Object.fromEntries(CAMPOS_DOCK.map(k => [k, state[k]])) };
+  try {
+    wall = bmp; wallId++;                                          // wallId invalida o cache do fundo e do vidro
+    const fr = FR[rec.id] || { zoom: 100, panX: 0, panY: 0 };     // cada wallpaper usa o enquadramento guardado dele
+    state.zoom = fr.zoom; state.panX = fr.panX; state.panY = fr.panY;
+    if (PREF.dockIndividual && DK[rec.id]) aplicarDock(DK[rec.id]);   // e a Dock guardada dele
+    draw(true);
+    return await new Promise(ok => cv.toBlob(ok, 'image/jpeg', .95));
+  } finally {                                                      // devolve o editor ao estado anterior
+    wall = salvo.wall; wallId++; state.zoom = salvo.zoom; state.panX = salvo.panX; state.panY = salvo.panY;
+    CAMPOS_DOCK.forEach(k => state[k] = salvo.dock[k]);
+    draw(); if (bmp.close) bmp.close();
+  }
+}
+async function gerarRotacao(){
+  const itens = imagensDoSlide();
+  if (!itens.length) throw new Error('Adicione wallpapers à Galeria automática primeiro.');
+  let feitas = 0;
+  mostrarProgresso('0 de ' + itens.length);
+  try {
+    await DO.clearRotation();
+    for (let i = 0; i < itens.length; i++){
+      $('progS').textContent = (i + 1) + ' de ' + itens.length;
+      try { await DO.saveRotationImage({ index: feitas, data: await paraBase64(await renderizarItem(itens[i])) }); feitas++; }
+      catch (e) { /* imagem ilegível: pula */ }
+    }
+  } finally { esconderProgresso(); }
+  if (!feitas) throw new Error('Nenhuma imagem pôde ser gerada.');
+  PREF.trocaGerado = { n: feitas, em: Date.now(), hash: hashTroca() }; salvarPrefs();
+}
+async function desligarTroca(){
+  await DO.cancelRotation(); await DO.clearRotation();             // cancela o agendamento e libera o espaço das imagens
+  PREF.trocaAtiva = false; PREF.trocaGerado = null; salvarPrefs();
+}
+const reagendar = () => DO.scheduleRotation({ hours: PREF.trocaHoras, target: PREF.trocaAlvo });
+
+function desenharTroca(){
+  guardarEnquadramento();                                          // garante que o enquadramento e a Dock mais recentes entrem na conta
+  $('cardTroca').hidden = !trocaOk();                              // só existe no APK
+  if (!trocaOk()) return;
+  const g = PREF.trocaGerado;
+  $('tAtiva').checked = PREF.trocaAtiva;
+  marcarSeg('tHoras', String(PREF.trocaHoras)); marcarSeg('tAlvo', PREF.trocaAlvo);
+  $('tInfo').textContent = g ? g.n + (g.n === 1 ? ' imagem pronta' : ' imagens prontas') : 'Nenhuma imagem pronta';
+  $('tInfo2').textContent = !imagensDoSlide().length ? 'Adicione imagens aos álbuns selecionados ou à Galeria automática.'
+    : !g ? 'As imagens serão geradas a partir da Galeria automática e da sua Dock atual.'
+    : trocaDesatualizada() ? 'A Dock ou a galeria mudou: toque em Atualizar.'
+    : 'Atualizadas em ' + new Date(g.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  $('tAgora').disabled = !PREF.trocaAtiva || !g;
+}
+$('tAtiva').addEventListener('change', async e => {
+  const quer = e.target.checked;
+  try {
+    if (quer){
+      if (trocaDesatualizada()) await gerarRotacao();             // gera as imagens na primeira vez (ou se algo mudou)
+      await reagendar(); PREF.trocaAtiva = true; salvarPrefs();
+      toast('Troca automática ligada: a cada ' + PREF.trocaHoras + ' h.');
+    } else { await desligarTroca(); toast('Troca automática desligada.'); }
+  } catch (err) { e.target.checked = PREF.trocaAtiva; toast(err.message || 'Não foi possível alterar a troca automática.'); }
+  desenharConfig();
+});
+$('tHoras').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  PREF.trocaHoras = +b.dataset.v; salvarPrefs(); marcarSeg('tHoras', b.dataset.v);
+  if (PREF.trocaAtiva) await reagendar().catch(() => toast('Não foi possível reagendar.'));
+});
+$('tAlvo').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  PREF.trocaAlvo = b.dataset.v; salvarPrefs(); marcarSeg('tAlvo', b.dataset.v);
+  if (PREF.trocaAtiva) await reagendar().catch(() => toast('Não foi possível reagendar.'));
+});
+$('tAtualizar').addEventListener('click', async () => {
+  try { await gerarRotacao(); toast('Imagens atualizadas.'); } catch (err) { toast(err.message || 'Não foi possível atualizar.'); }
+  desenharConfig();
+});
+$('tAgora').addEventListener('click', async () => {
+  try { const r = await DO.rotateNow({ target: PREF.trocaAlvo }); toast(r && r.applied ? 'Wallpaper trocado.' : 'Não há imagens prontas.'); }
+  catch (err) { toast('Não foi possível trocar agora.'); }
+});
+
+/* ---------- Estilos do vidro: atalhos que ajustam vários controles de uma vez ----------
+   Bisel e espessura são frações da altura da Dock e o desfoque é fração da largura da imagem, então valem em qualquer tamanho. */
+const ESTILOS = {
+  cristal: { bisel: .35, espessura: 1.2, blur: .012, ior: 1.5, scale: 100, chroma: 8,  shine: 60, profile: 'squircle' },   // o visual padrão
+  gelo:    { bisel: .42, espessura: 1.5, blur: .006, ior: 1.8, scale: 130, chroma: 14, shine: 90, profile: 'squircle' },   // transparente, com muita refração
+  fosco:   { bisel: .30, espessura: .8,  blur: .030, ior: 1.2, scale: 60,  chroma: 0,  shine: 35, profile: 'squircle' },   // vidro jateado
+  liquido: { bisel: .45, espessura: 1.4, blur: .012, ior: 1.6, scale: 140, chroma: 10, shine: 70, profile: 'lip' },        // borda alta, centro côncavo
+  sutil:   { bisel: .25, espessura: 1.0, blur: .010, ior: 1.2, scale: 50,  chroma: 3,  shine: 25, profile: 'squircle' }    // quase imperceptível
+};
+function aplicarEstilo(nome){
+  const e = ESTILOS[nome]; if (!e) return;
+  state.bevel = Math.round(state.h * e.bisel); state.thick = Math.round(state.bevel * e.espessura); state.blur = Math.round(OUT.w * e.blur);
+  Object.assign(state, { ior: e.ior, scale: e.scale, chroma: e.chroma, shine: e.shine, profile: e.profile });
+  syncInputs(); schedule();
+}
+$('estilos').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  aplicarEstilo(b.dataset.e); [...$('estilos').children].forEach(x => x.classList.toggle('on', x === b));
+});
+$('sliders').addEventListener('input', () => [...$('estilos').children].forEach(x => x.classList.remove('on')));   // mexeu num controle: já não é um estilo "puro"
+
+/* Arranque */
+setWall(wall);
