@@ -560,15 +560,26 @@ document.getElementById('btnReset').addEventListener('click', () => {
   applySize(); resetDock(); syncInputs(); draw();
 });
 
-/* Botão "Ampliar prévia" (celular): alterna entre prévia média e grande. Só muda o tamanho na tela; o PNG exportado não muda. */
+/* Prévia compacta ou ampliada, com ícone atualizado e transição visual.
+   No modo ampliado o painel não ocupa uma área vazia; o botão continua visível. */
 const stageEl = document.querySelector('.stage'), bigBtn = document.getElementById('btnBig');
-bigBtn.addEventListener('click', () => {
-  const big = stageEl.classList.toggle('big');
-  panel.classList.toggle('hide', big);           // ampliado: esconde abas e seções, fica só a barra de ações
+const editorApp = document.querySelector('main.app');
+const zoomIcon = bigBtn.querySelector('svg');
+const zoomExpandPath = 'M8 3H3v5M16 21h5v-5M3 3l7 7M21 21l-7-7';
+const zoomShrinkPath = 'M3 8h5V3M21 16h-5v5M3 3l7 7M21 21l-7-7';
+function atualizarModoPrevia(big){
+  editorApp.classList.toggle('preview-expanded', big);
+  stageEl.classList.toggle('big', big);
+  panel.classList.remove('hide');
   bigBtn.setAttribute('aria-label', big ? 'Reduzir prévia' : 'Ampliar prévia');
+  bigBtn.setAttribute('aria-pressed', String(big));
   bigBtn.title = big ? 'Reduzir prévia' : 'Ampliar prévia';
-  schedule();                                   // redesenha na nova resolução de prévia
-});
+  if (zoomIcon) zoomIcon.innerHTML = big
+    ? '<path d="M9 3v6H3M15 21v-6h6M3 9l7-7M21 15l-7 7"/>'
+    : '<path d="M8 3H3v5M16 21h5v-5M3 3l7 7M21 21l-7-7"/>';
+  requestAnimationFrame(() => { fitPhone(); schedule(); });
+}
+bigBtn.addEventListener('click', () => atualizarModoPrevia(!editorApp.classList.contains('preview-expanded')));
 
 /* Compatibilidade: WebViews Android antigos não têm ctx.roundRect; este substituto desenha o mesmo caminho com arcos */
 if (!CanvasRenderingContext2D.prototype.roundRect){

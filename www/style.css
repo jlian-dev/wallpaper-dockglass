@@ -1594,3 +1594,37 @@ button:has(> .ui-icon > path) { -webkit-tap-highlight-color: transparent; }
 button:has(> .ui-icon) > span:not(.ui-icon) { vertical-align: middle; }
 button#albumCriar, button#rAlbumCriar, button#gAdd, button#rAdd { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 button#albumCriar .ui-icon, button#rAlbumCriar .ui-icon, button#gAdd .ui-icon, button#rAdd .ui-icon { width: 17px; height: 17px; }
+
+
+/* ===== Editor mobile: espaço útil e prévia ampliável ===== */
+@media (max-width: 820px) {
+  /* Padrão: a prévia ocupa menos espaço e os controles têm área para edição. */
+  .app > .stage {
+    height: 47dvh;
+    min-height: 0;
+    flex: 0 0 auto;
+    transition: height .34s cubic-bezier(.2,.8,.2,1);
+  }
+  .app > .panel {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  }
+  .app.preview-expanded > .stage,
+  .app.preview-expanded > .stage.big {
+    height: 100dvh;
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
+  .app.preview-expanded > .panel { display: none; }
+  /* Não esconder os controles na visualização normal. */
+  .app:not(.preview-expanded) > .panel details { visibility: visible; }
+  .stage .bigbtn { transition: background-color .2s ease, transform .3s cubic-bezier(.2,.8,.2,1); }
+  .stage .bigbtn .ui-icon { transition: transform .3s ease; }
+  .app.preview-expanded .stage .bigbtn { background: var(--acc); color: var(--acc-fg); }
+  .app.preview-expanded .stage .bigbtn .ui-icon { transform: rotate(90deg); }
+}
+@media (max-width: 820px) and (prefers-reduced-motion: reduce) {
+  .app > .stage, .stage .bigbtn, .stage .bigbtn .ui-icon { transition: none !important; }
+}
