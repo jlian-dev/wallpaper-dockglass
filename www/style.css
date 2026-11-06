@@ -729,11 +729,12 @@ summary::-webkit-details-marker {
   flex-direction: column;
   background: var(--bg);
   padding: max(env(safe-area-inset-top,0px),var(--sat,0px)) 0 max(env(safe-area-inset-bottom,0px),var(--sab,0px));
-  opacity: 0;
+  /* Sem crossfade: abas inativas não devem mostrar o editor por transparência. */
+  opacity: 1;
   visibility: hidden;
-  transform: translateY(10px);
+  transform: none;
   pointer-events: none;
-  transition: opacity .18s,transform .18s,visibility 0s .18s;
+  transition: none;
 }
 
 /* Tela visível, com transição suave. */
@@ -742,7 +743,7 @@ summary::-webkit-details-marker {
   visibility: visible;
   transform: none;
   pointer-events: auto;
-  transition: opacity .18s,transform .18s;
+  transition: none;
 }
 
 /* Cabeçalho das telas. */
@@ -1601,9 +1602,9 @@ button#albumCriar .ui-icon, button#rAlbumCriar .ui-icon, button#gAdd .ui-icon, b
    Expandir não anima o tamanho do canvas, para evitar travadas na renderização. */
 @media (max-width: 820px) {
   .app > .stage {
-    height: 60dvh;
+    height: 48dvh;
     min-height: 0;
-    flex: 0 0 60dvh;
+    flex: 0 0 48dvh;
     overflow: hidden;
     transition: none;
   }
