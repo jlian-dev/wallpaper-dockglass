@@ -197,6 +197,7 @@ function draw(full = false){
   if (cv.height !== th) cv.height = th;
   try { render(); } finally { Object.assign(state, saved); }     // devolve os valores reais
 }
+let renderizandoWallpaperAutomatico = false;
 function render(){
   const W = cv.width, H = cv.height;
   ctx.clearRect(0,0,W,H);
@@ -210,7 +211,7 @@ function render(){
   const sc = Math.max(OUT.w/sizeOf(wall)[0], OUT.h/sizeOf(wall)[1]) * state.zoom/100;
   document.getElementById('info').textContent = OUT.w + ' × ' + OUT.h + ' px (prévia a ' + Math.round(W/OUT.w*100) + '%, o PNG sai em 100%) · ' +
     (sc > 1.001 ? 'papel de parede ampliado ' + sc.toFixed(2) + '×: pode perder nitidez' : 'sem ampliação, nitidez total');
-  saveSoon();
+  if (!renderizandoWallpaperAutomatico) saveSoon();
 }
 
 /* =====================================================================
@@ -1022,8 +1023,7 @@ async function adicionarRotacao(arquivos, albumDestino = null){
   }
   const msg = adicionadas ? adicionadas + (adicionadas === 1 ? ' imagem adicionada à galeria automática.' : ' imagens adicionadas à galeria automática.') : 'Nenhuma imagem foi adicionada.';
   toast(falhas ? msg + ' ' + falhas + ' falha(s).' : msg);
-  PREF.trocaGerado = null; salvarPrefs();
-  agendarSincronizacaoRotacao();
+  if (adicionadas) { PREF.trocaGerado = null; salvarPrefs(); agendarSincronizacaoRotacao(true); }
   redesenharTelas(); desenharConfig();
 }
 
@@ -1088,7 +1088,7 @@ $('rImportarConfirmar').addEventListener('click', async () => {
     // Apenas marca as imagens automáticas como desatualizadas.
     PREF.trocaGerado = null;
     salvarPrefs();
-    agendarSincronizacaoRotacao();
+    if (adicionados) agendarSincronizacaoRotacao(true);
 
     rImportarPainel.hidden = true;
     $('rImportar').setAttribute('aria-expanded', 'false');
@@ -1334,7 +1334,7 @@ $('rAlbumGerenciar').addEventListener('change',async e=>{
   const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a)return;
   a.ids=e.target.checked?[...new Set([...(a.ids||[]),id])]:(a.ids||[]).filter(v=>v!==id);
   if(!a.ids.includes(a.coverId))a.coverId=a.ids[0]||null;
-  await DB.putAlbum(a);PREF.trocaGerado=null;salvarPrefs();agendarSincronizacaoRotacao();desenharGaleriaRotacao();
+  await DB.putAlbum(a);PREF.trocaGerado=null;salvarPrefs();agendarSincronizacaoRotacao(e.target.checked);desenharGaleriaRotacao();
 });
 $('rAlbumGerenciar').addEventListener('click',async e=>{
   const b=e.target.closest('[data-rcover]');if(!b)return;
@@ -1592,6 +1592,9 @@ const esconderProgresso = () => { $('progDlg').hidden = true; };
 async function renderizarItem(rec, dockCompartilhada){
   const bmp = await createImageBitmap(rec.blob);
   const salvo = { wall, zoom: state.zoom, panX: state.panX, panY: state.panY, dock: Object.fromEntries(CAMPOS_DOCK.map(k => [k, state[k]])) };
+  // Desenhar arquivos da rotação não é uma edição do wallpaper aberto.
+  clearTimeout(frT);
+  renderizandoWallpaperAutomatico = true;
   try {
     wall = bmp; wallId++;                                          // wallId invalida o cache do fundo e do vidro
     const fr = FR[rec.id] || { zoom: 100, panX: 0, panY: 0 };     // cada wallpaper usa o enquadramento guardado dele
@@ -1603,23 +1606,24 @@ async function renderizarItem(rec, dockCompartilhada){
   } finally {                                                      // devolve o editor ao estado anterior
     wall = salvo.wall; wallId++; state.zoom = salvo.zoom; state.panX = salvo.panX; state.panY = salvo.panY;
     CAMPOS_DOCK.forEach(k => state[k] = salvo.dock[k]);
+    renderizandoWallpaperAutomatico = false;
     draw(); if (bmp.close) bmp.close();
   }
 }
-async function gerarRotacao(){
+async function gerarRotacao(mostrarAviso = false){
   const dockCompartilhada = dockAtual();
   const itens = imagensDoSlide();
   if (!itens.length) throw new Error('Adicione wallpapers à Galeria automática primeiro.');
   let feitas = 0;
-  mostrarProgresso('0 de ' + itens.length);
+  if (mostrarAviso) mostrarProgresso('0 de ' + itens.length);
   try {
     await DO.clearRotation();
     for (let i = 0; i < itens.length; i++){
-      $('progS').textContent = (i + 1) + ' de ' + itens.length;
+      if (mostrarAviso) $('progS').textContent = (i + 1) + ' de ' + itens.length;
       try { await DO.saveRotationImage({ index: feitas, data: await paraBase64(await renderizarItem(itens[i], dockCompartilhada)) }); feitas++; }
       catch (e) { /* imagem ilegível: pula */ }
     }
-  } finally { esconderProgresso(); }
+  } finally { if (mostrarAviso) esconderProgresso(); }
   if (!feitas) throw new Error('Nenhuma imagem pôde ser gerada.');
   PREF.trocaGerado = { n: feitas, em: Date.now(), hash: hashTroca() }; salvarPrefs();
 }
@@ -1627,7 +1631,7 @@ async function gerarRotacao(){
 let sincronizacaoRotacaoEmCurso = false;
 let timerSincronizacaoRotacao = null;
 let sincronizacaoRotacaoPendente = false;
-async function sincronizarRotacaoAutomatica(){
+async function sincronizarRotacaoAutomatica(mostrarAviso = false){
   if (!PREF.trocaAtiva || !trocaOk()) return;
   if (sincronizacaoRotacaoEmCurso) { sincronizacaoRotacaoPendente = true; return; }
   sincronizacaoRotacaoEmCurso = true;
@@ -1642,7 +1646,8 @@ async function sincronizarRotacaoAutomatica(){
         toast('A Galeria Automática está vazia. Troca automática pausada.');
         break;
       }
-      if (trocaDesatualizada()) await gerarRotacao();
+      if (trocaDesatualizada()) await gerarRotacao(mostrarAviso);
+      mostrarAviso = false; // no máximo uma janela por sincronização
     } while (sincronizacaoRotacaoPendente && PREF.trocaAtiva);
     desenharTroca();
   } catch (e) {
@@ -1652,13 +1657,17 @@ async function sincronizarRotacaoAutomatica(){
     sincronizacaoRotacaoEmCurso = false;
   }
 }
-function agendarSincronizacaoRotacao(){
+let mostrarAvisoNaProximaSincronizacao = false;
+function agendarSincronizacaoRotacao(mostrarAviso = false){
   if (!PREF.trocaAtiva || !trocaOk()) return;
+  mostrarAvisoNaProximaSincronizacao ||= mostrarAviso;
   clearTimeout(timerSincronizacaoRotacao);
   timerSincronizacaoRotacao = setTimeout(async () => {
+    const mostrar = mostrarAvisoNaProximaSincronizacao;
+    mostrarAvisoNaProximaSincronizacao = false;
     if (!PREF.trocaAtiva) return;
     if (sincronizacaoRotacaoEmCurso) { sincronizacaoRotacaoPendente = true; return; }
-    if (trocaDesatualizada()) await sincronizarRotacaoAutomatica();
+    if (trocaDesatualizada()) await sincronizarRotacaoAutomatica(mostrar);
   }, 2500);
 }
 async function desligarTroca(){
@@ -1668,7 +1677,7 @@ async function desligarTroca(){
 const reagendar = () => DO.scheduleRotation({ hours: PREF.trocaHoras, target: PREF.trocaAlvo });
 
 function desenharTroca(){
-  guardarEnquadramento();                                          // garante que o enquadramento e a Dock mais recentes entrem na conta
+  // Apenas exibe o estado: abrir Configurações não deve salvar nem regenerar imagens.
   $('cardTroca').hidden = !trocaOk();                              // só existe no APK
   if (!trocaOk()) return;
   const g = PREF.trocaGerado;
@@ -1685,7 +1694,7 @@ $('tAtiva').addEventListener('change', async e => {
   const quer = e.target.checked;
   try {
     if (quer){
-      if (trocaDesatualizada()) await gerarRotacao();             // gera as imagens na primeira vez (ou se algo mudou)
+      if (trocaDesatualizada()) await gerarRotacao(true);             // primeira ativação: mostra progresso uma única vez
       await reagendar(); PREF.trocaAtiva = true; salvarPrefs();
       toast('Troca automática ligada: a cada ' + PREF.trocaHoras + ' h.');
     } else { await desligarTroca(); toast('Troca automática desligada.'); }
