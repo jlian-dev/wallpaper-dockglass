@@ -1,6 +1,12 @@
 package com.dockliquida.app;
 
 import android.content.Context;
+import android.content.ContentValues;
+import android.content.ContentResolver;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.util.Base64;
+import java.io.OutputStream;
 import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -136,6 +142,49 @@ public class DockOverlayPlugin extends Plugin {
         File d = new File(getContext().getFilesDir(), "rotation");
         if (!d.exists()) d.mkdirs();
         return d;
+    }
+
+    /** Salva PNG visível na Galeria Android: Imagens/Dock Líquida (Android 10+). */
+    @PluginMethod
+    public void saveImageToGallery(final PluginCall call) {
+        final String data = call.getString("data");
+        final String name = call.getString("name", "DockLiquida.png");
+        if (data == null || data.isEmpty()) { call.reject("Imagem vazia."); return; }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            call.reject("Salvar direto na Galeria requer Android 10 ou superior.");
+            return;
+        }
+        new Thread(() -> {
+            ContentResolver resolver = getContext().getContentResolver();
+            Uri uri = null;
+            try {
+                String safeName = name.replaceAll("[^a-zA-Z0-9._-]", "_");
+                if (!safeName.toLowerCase(Locale.US).endsWith(".png")) safeName += ".png";
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Images.Media.DISPLAY_NAME, safeName);
+                values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+                values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Dock Líquida");
+                values.put(MediaStore.Images.Media.IS_PENDING, 1);
+                uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new IllegalStateException("Não foi possível criar a imagem na Galeria.");
+                byte[] bytes = Base64.decode(data, Base64.DEFAULT);
+                try (OutputStream stream = resolver.openOutputStream(uri)) {
+                    if (stream == null) throw new IllegalStateException("Não foi possível abrir o destino.");
+                    stream.write(bytes);
+                    stream.flush();
+                }
+                ContentValues done = new ContentValues();
+                done.put(MediaStore.Images.Media.IS_PENDING, 0);
+                resolver.update(uri, done, null, null);
+                JSObject result = new JSObject();
+                result.put("saved", true);
+                result.put("uri", uri.toString());
+                call.resolve(result);
+            } catch (Exception ex) {
+                if (uri != null) try { resolver.delete(uri, null, null); } catch (Exception ignored) {}
+                call.reject("Falha ao salvar wallpaper na Galeria: " + ex.getMessage());
+            }
+        }).start();
     }
 
     /** Guarda uma imagem pronta (JPEG em base64) na fila da troca automática. */
