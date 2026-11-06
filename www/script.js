@@ -1023,6 +1023,7 @@ async function adicionarRotacao(arquivos, albumDestino = null){
   const msg = adicionadas ? adicionadas + (adicionadas === 1 ? ' imagem adicionada à galeria automática.' : ' imagens adicionadas à galeria automática.') : 'Nenhuma imagem foi adicionada.';
   toast(falhas ? msg + ' ' + falhas + ' falha(s).' : msg);
   PREF.trocaGerado = null; salvarPrefs();
+  agendarSincronizacaoRotacao();
   redesenharTelas(); desenharConfig();
 }
 
@@ -1087,6 +1088,7 @@ $('rImportarConfirmar').addEventListener('click', async () => {
     // Apenas marca as imagens automáticas como desatualizadas.
     PREF.trocaGerado = null;
     salvarPrefs();
+    agendarSincronizacaoRotacao();
 
     rImportarPainel.hidden = true;
     $('rImportar').setAttribute('aria-expanded', 'false');
@@ -1099,6 +1101,7 @@ $('rImportarConfirmar').addEventListener('click', async () => {
     await carregarGaleria();
     PREF.trocaGerado = null;
     salvarPrefs();
+    agendarSincronizacaoRotacao();
     redesenharTelas();
     toast('Não foi possível concluir a importação.');
   }
@@ -1113,6 +1116,7 @@ async function removerRotacao(id){
     await DB.putAlbum(a).catch(() => {});
   }
   PREF.trocaGerado = null; salvarPrefs();
+  agendarSincronizacaoRotacao();
   redesenharTelas();
   toast('Removida da galeria automática.');
 }
@@ -1323,13 +1327,14 @@ $('rAlbumExcluir').addEventListener('click',async()=>{
   await DB.delAlbum(a.id);albums=albums.filter(v=>v.id!==a.id);
   guardarSlide(selecionadosRotacao().filter(id=>id!==a.id));
   albumRotacaoAtual=null;albumRotacaoPainel=false;desenharGaleriaRotacao();
+  PREF.trocaGerado=null;salvarPrefs();agendarSincronizacaoRotacao();
 });
 $('rAlbumGerenciar').addEventListener('change',async e=>{
   const id=e.target.dataset.rphoto;if(!id)return;
   const a=albunsRotacao().find(a=>a.id===albumRotacaoAtual);if(!a)return;
   a.ids=e.target.checked?[...new Set([...(a.ids||[]),id])]:(a.ids||[]).filter(v=>v!==id);
   if(!a.ids.includes(a.coverId))a.coverId=a.ids[0]||null;
-  await DB.putAlbum(a);PREF.trocaGerado=null;salvarPrefs();desenharGaleriaRotacao();
+  await DB.putAlbum(a);PREF.trocaGerado=null;salvarPrefs();agendarSincronizacaoRotacao();desenharGaleriaRotacao();
 });
 $('rAlbumGerenciar').addEventListener('click',async e=>{
   const b=e.target.closest('[data-rcover]');if(!b)return;
@@ -1344,7 +1349,7 @@ $('rSlideLista').addEventListener('change',e=>{
     if(ids.length>=2){e.target.checked=false;toast('Escolha no máximo 2 álbuns.');return;}
     ids.push(id);
   }else if(!e.target.checked)ids=ids.filter(v=>v!==id);
-  guardarSlide(ids);desenharGaleriaRotacao();
+  guardarSlide(ids);PREF.trocaGerado=null;salvarPrefs();agendarSincronizacaoRotacao();desenharGaleriaRotacao();
 });
 function desenharGaleriaRotacao(){
   limparUrls();
@@ -1549,6 +1554,7 @@ $('sRestore').addEventListener('click', () => {
   } finally {
     history.replaceState({ v: 'home' }, '');
     try { mostrar('home'); } catch (e) { console.error('Falha ao abrir Início', e); }
+    if (PREF.trocaAtiva && trocaOk() && trocaDesatualizada()) agendarSincronizacaoRotacao();
     document.documentElement.classList.remove('app-booting');
     document.documentElement.classList.add('app-ready');
     const splash = $('startupSplash');
@@ -1620,14 +1626,28 @@ async function gerarRotacao(){
 // Mantém a fila da troca automática sincronizada com as Docks individuais.
 let sincronizacaoRotacaoEmCurso = false;
 let timerSincronizacaoRotacao = null;
+let sincronizacaoRotacaoPendente = false;
 async function sincronizarRotacaoAutomatica(){
-  if (!PREF.trocaAtiva || !trocaOk() || sincronizacaoRotacaoEmCurso) return;
+  if (!PREF.trocaAtiva || !trocaOk()) return;
+  if (sincronizacaoRotacaoEmCurso) { sincronizacaoRotacaoPendente = true; return; }
   sincronizacaoRotacaoEmCurso = true;
   try {
-    await gerarRotacao();
-    toast('Wallpapers e Docks automáticos atualizados.');
+    // Caso novas imagens cheguem enquanto a fila é preparada, reconstrói com o estado final.
+    do {
+      sincronizacaoRotacaoPendente = false;
+      if (!PREF.trocaAtiva) break;
+      if (!imagensDoSlide().length) {
+        // A fila ficou vazia: interrompe as trocas, evitando usar wallpapers antigos.
+        await desligarTroca();
+        toast('A Galeria Automática está vazia. Troca automática pausada.');
+        break;
+      }
+      if (trocaDesatualizada()) await gerarRotacao();
+    } while (sincronizacaoRotacaoPendente && PREF.trocaAtiva);
+    desenharTroca();
   } catch (e) {
-    toast('Não foi possível sincronizar. Use Atualizar em Ajustes.');
+    console.error('Sincronização automática da galeria:', e);
+    toast('Falha ao sincronizar a Galeria Automática.');
   } finally {
     sincronizacaoRotacaoEmCurso = false;
   }
@@ -1635,9 +1655,11 @@ async function sincronizarRotacaoAutomatica(){
 function agendarSincronizacaoRotacao(){
   if (!PREF.trocaAtiva || !trocaOk()) return;
   clearTimeout(timerSincronizacaoRotacao);
-  timerSincronizacaoRotacao = setTimeout(() => {
-    if (trocaDesatualizada()) sincronizarRotacaoAutomatica();
-  }, 10000);
+  timerSincronizacaoRotacao = setTimeout(async () => {
+    if (!PREF.trocaAtiva) return;
+    if (sincronizacaoRotacaoEmCurso) { sincronizacaoRotacaoPendente = true; return; }
+    if (trocaDesatualizada()) await sincronizarRotacaoAutomatica();
+  }, 2500);
 }
 async function desligarTroca(){
   await DO.cancelRotation(); await DO.clearRotation();             // cancela o agendamento e libera o espaço das imagens
@@ -1655,7 +1677,7 @@ function desenharTroca(){
   $('tInfo').textContent = g ? g.n + (g.n === 1 ? ' imagem pronta' : ' imagens prontas') : 'Nenhuma imagem pronta';
   $('tInfo2').textContent = !imagensDoSlide().length ? 'Adicione imagens aos álbuns selecionados ou à Galeria automática.'
     : !g ? 'As imagens serão geradas a partir da Galeria automática e da sua Dock atual.'
-    : trocaDesatualizada() ? 'A Dock ou a galeria mudou: toque em Atualizar.'
+    : trocaDesatualizada() ? 'Sincronização automática pendente…'
     : 'Atualizadas em ' + new Date(g.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   $('tAgora').disabled = !PREF.trocaAtiva || !g;
 }
@@ -1680,10 +1702,115 @@ $('tAlvo').addEventListener('click', async e => {
   PREF.trocaAlvo = b.dataset.v; salvarPrefs(); marcarSeg('tAlvo', b.dataset.v);
   if (PREF.trocaAtiva) await reagendar().catch(() => toast('Não foi possível reagendar.'));
 });
-$('tAtualizar').addEventListener('click', async () => {
-  try { await gerarRotacao(); toast('Imagens atualizadas.'); } catch (err) { toast(err.message || 'Não foi possível atualizar.'); }
-  desenharConfig();
+/* ---------- Backup local: galerias, álbuns, Docks, enquadramentos e preferências ----------
+   O arquivo JSON é salvo pelo compartilhamento normal; NÃO é enviado a servidores.
+   Importação une os dados ao acervo atual, preservando imagens existentes. */
+const backupParaDataURL = blob => new Promise((ok, falha) => {
+  const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => falha(r.error);
+  r.readAsDataURL(blob);
 });
+async function exportarBackup(){
+  guardarEnquadramento();
+  const listaFixa = await DB.all(), listaAuto = await DB.allRotation(), listaAlbuns = await DB.allAlbums();
+  const bytes = [...listaFixa, ...listaAuto].reduce((n, rec) => n + (rec.blob?.size || 0), 0);
+  if (bytes > 120 * 1024 * 1024) {
+    alert('Suas imagens ocupam mais de 120 MB. O backup JSON pode esgotar a memória do celular. Faça a exportação em grupos menores ou aguarde a versão de backup ZIP.');
+    return;
+  }
+  const converter = async (lista, tipo) => {
+    const saida = [];
+    for (let i = 0; i < lista.length; i++) {
+      const rec = lista[i];
+      if (!(rec.blob instanceof Blob)) throw new Error('Imagem sem arquivo original: ' + rec.name);
+      $('progS').textContent = 'Preparando ' + tipo + ': ' + (i + 1) + '/' + lista.length;
+      saida.push({id: rec.id, name: rec.name, added: rec.added,
+        image: await backupParaDataURL(rec.blob)});
+    }
+    return saida;
+  };
+  const janela = $('backupDlg'); janela.hidden = true;
+  const textoAnterior = $('progT').textContent; $('progT').textContent = 'Criando backup…';
+  mostrarProgresso('Preparando imagens…');
+  try {
+    const pacote = {
+      format: 'dock-liquida-backup', version: 1, date: new Date().toISOString(),
+      fixed: await converter(listaFixa, 'galeria fixa'),
+      rotation: await converter(listaAuto, 'galeria automática'), albums: listaAlbuns,
+      frames: FR, docks: DK, preferences: {...PREF, trocaAtiva: false, trocaGerado: null},
+      settings: localStorage.getItem('dockSettings'),
+      slideshow: selecionadosRotacao(), current: curId
+    };
+    const arquivo = new Blob([JSON.stringify(pacote)], {type:'application/json'});
+    await entregar(arquivo, 'DockLiquida-backup-' + new Date().toISOString().slice(0,10) + '.json');
+    toast('Backup preparado. Salve o arquivo em um local seguro.');
+  } catch (e) {
+    console.error('Backup', e); toast('Não foi possível criar o backup.');
+  } finally {
+    esconderProgresso(); $('progT').textContent = textoAnterior;
+  }
+}
+async function restaurarBackup(file){
+  if (!file) return;
+  if (file.size > 190 * 1024 * 1024) { toast('Backup muito grande para importar neste aparelho.'); return; }
+  const textoAnterior = $('progT').textContent;
+  $('progT').textContent = 'Restaurando backup…';
+  mostrarProgresso('Validando arquivo…');
+  try {
+    const pack = JSON.parse(await file.text());
+    if (pack?.format !== 'dock-liquida-backup' || pack.version !== 1 ||
+        !Array.isArray(pack.fixed) || !Array.isArray(pack.rotation) || !Array.isArray(pack.albums) ||
+        pack.fixed.length > 500 || pack.rotation.length > 500 || pack.albums.length > 500 ||
+        !pack.fixed.every(x => typeof x.id === 'string' && typeof x.image === 'string' && x.image.startsWith('data:image/')) ||
+        !pack.rotation.every(x => typeof x.id === 'string' && typeof x.image === 'string' && x.image.startsWith('data:image/'))) {
+      throw new Error('Arquivo de backup inválido ou incompatível.');
+    }
+    if (!confirm('Restaurar ' + (pack.fixed.length + pack.rotation.length) +
+      ' wallpapers e ' + pack.albums.length + ' álbuns? As imagens atuais serão mantidas. A troca automática permanecerá desativada até você ativá-la novamente.')) return;
+    // Não apaga os dados atuais. Dados com o mesmo ID recebem a versão do backup.
+    for (const [tipo, itens, gravar] of [
+      ['fixos', pack.fixed, DB.put], ['automáticos', pack.rotation, DB.putRotation]
+    ]) {
+      for (let i=0; i<itens.length; i++) {
+        $('progS').textContent = 'Restaurando ' + tipo + ': ' + (i+1) + '/' + itens.length;
+        const x=itens[i], resp=await fetch(x.image), blob=await resp.blob();
+        if (!blob.type.startsWith('image/')) throw new Error('Imagem inválida no backup.');
+        await gravar({id:x.id, name:x.name || 'imagem', added:Number(x.added)||Date.now(),
+          blob, thumb:await miniatura(blob)});
+      }
+    }
+    for (const a of pack.albums) {
+      if (a && typeof a.id === 'string' && typeof a.name === 'string' && Array.isArray(a.ids)) {
+        await DB.putAlbum({id:a.id,type:a.type,name:a.name.slice(0,60),
+          ids:a.ids.filter(id=>typeof id==='string'),coverId:a.coverId||null});
+      }
+    }
+    if (pack.frames && typeof pack.frames==='object') { FR={...FR,...pack.frames}; salvarFR(); }
+    if (pack.docks && typeof pack.docks==='object') { DK={...DK,...pack.docks}; salvarDK(); }
+    if (pack.preferences && typeof pack.preferences==='object') {
+      Object.assign(PREF, pack.preferences, {trocaAtiva:false,trocaGerado:null}); salvarPrefs();
+    }
+    if (typeof pack.settings==='string') localStorage.setItem('dockSettings',pack.settings);
+    if (Array.isArray(pack.slideshow)) guardarSlide(pack.slideshow.filter(x=>typeof x==='string').slice(0,2));
+    if (typeof pack.current==='string') localStorage.setItem('dockCurrent',pack.current);
+    if (trocaOk()) await DO.cancelRotation().catch(()=>{});
+    await carregarGaleria(); aplicarGlassNav(); applyTheme(); redesenharTelas();
+    toast('Backup restaurado. Reinicie o app para carregar os ajustes do editor.');
+  } catch (e) {
+    console.error('Restauração', e);
+    alert('Não foi possível concluir a restauração: ' + (e.message || e) + '\nSe algumas imagens foram importadas, elas foram preservadas.');
+    await carregarGaleria(); redesenharTelas();
+  } finally {
+    esconderProgresso(); $('progT').textContent = textoAnterior;
+  }
+}
+$('backupClose').addEventListener('click', () => { $('backupDlg').hidden = true; });
+$('backupExport').addEventListener('click', exportarBackup);
+$('backupImport').addEventListener('click', () => { $('backupDlg').hidden = true; $('backupFile').click(); });
+$('backupFile').addEventListener('change', e => {
+  const f=e.target.files?.[0];e.target.value='';if(f)restaurarBackup(f);
+});
+
+$('tBackup').addEventListener('click', () => { $('backupDlg').hidden = false; });
 $('tAgora').addEventListener('click', async () => {
   try { const r = await DO.rotateNow({ target: PREF.trocaAlvo }); toast(r && r.applied ? 'Wallpaper trocado.' : 'Não há imagens prontas.'); }
   catch (err) { toast('Não foi possível trocar agora.'); }

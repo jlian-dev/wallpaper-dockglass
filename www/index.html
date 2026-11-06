@@ -239,7 +239,7 @@
         <div class="seg" id="tHoras"><button type="button" data-v="6">6 h</button><button type="button" data-v="12">12 h</button><button type="button" data-v="24">24 h</button><button type="button" data-v="48">48 h</button></div></div>
       <div class="srow"><div><b>Aplicar em</b></div>
         <div class="seg" id="tAlvo"><button type="button" data-v="home">Início</button><button type="button" data-v="lock">Bloqueio</button><button type="button" data-v="both">Ambas</button></div></div>
-      <div class="srow"><div><b id="tInfo">Nenhuma imagem pronta</b><small id="tInfo2"></small></div><button class="tonal sm" id="tAtualizar" type="button">Atualizar</button></div>
+      <div class="srow"><div><b id="tInfo">Nenhuma imagem pronta</b><small id="tInfo2"></small></div><button class="tonal sm" id="tBackup" type="button">Backup</button></div>
       <button class="rowbtn" id="tAgora" type="button">Trocar agora</button>
     </div>
     <div class="card">
@@ -274,6 +274,15 @@
     <button type="button" data-alvo="lock">Tela de bloqueio</button>
     <button type="button" data-alvo="both">Ambas</button>
     <button type="button" data-alvo="" class="ghost">Cancelar</button></div></div>
+<div class="dlg" id="backupDlg" hidden role="dialog" aria-modal="true" aria-label="Backup do Dock Líquida">
+  <div class="dlg-box"><b>Backup do Dock Líquida</b>
+    <small>Salve e restaure galerias, álbuns, Docks individuais e preferências. O arquivo inclui suas fotos e pode ser grande.</small>
+    <button type="button" id="backupExport">Salvar backup (.json)</button>
+    <button type="button" id="backupImport">Restaurar backup (.json)</button>
+    <button type="button" id="backupClose" class="ghost">Cancelar</button>
+  </div>
+</div>
+<input type="file" id="backupFile" accept=".json,application/json" hidden>
 <div class="dlg" id="progDlg" hidden role="alertdialog" aria-modal="true" aria-label="Gerando imagens">
   <div class="dlg-box"><b id="progT">Gerando imagens…</b><small id="progS"></small><small>Não feche o app até terminar.</small></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
