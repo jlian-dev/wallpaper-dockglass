@@ -1643,3 +1643,34 @@ button#albumCriar .ui-icon, button#rAlbumCriar .ui-icon, button#gAdd .ui-icon, b
 .album-add-actions { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
 .album-add-actions .album-pick-toggle { flex: 1 1 150px; min-width:0; }
 .album-add-actions[hidden] { display:none!important; }
+
+/* ===== Álbuns: somente ações essenciais à vista ===== */
+.album-toolbar {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; margin:4px 0 14px;
+  flex-wrap:nowrap;
+}
+.album-toolbar[hidden], .album-dropdown [hidden], #albumCriar[hidden], #rAlbumCriar[hidden], #gAdd[hidden], #rAdd[hidden] {display:none!important;}
+.album-tools {display:flex;align-items:center;gap:8px; margin-left:auto;}
+.album-back {background:transparent;border:0;color:var(--acc);font-weight:650;padding:10px 0;white-space:nowrap;}
+.album-dropdown {position:relative;min-width:0;}
+.album-dropdown > summary {list-style:none;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;white-space:nowrap;min-height:44px;border-radius:14px;font:inherit;font-weight:700;}
+.album-dropdown > summary::-webkit-details-marker {display:none;}
+.album-add-main {background:var(--sc);color:var(--text);padding:8px 14px;}
+.album-more {width:44px; background:color-mix(in srgb,var(--card) 72%,transparent);border:1px solid var(--line);font-size:24px;line-height:1;}
+.album-dropdown-list {position:absolute;top:calc(100% + 7px);right:0;min-width:190px;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.23);padding:6px;z-index:35;}
+.album-dropdown-list button {display:block;width:100%;text-align:left;padding:12px 10px;border:0;background:transparent;color:var(--text);font:inherit;border-radius:11px;white-space:nowrap;}
+.album-dropdown-list button:active {background:var(--sc);}
+.album-dropdown-list #albumExcluir,.album-dropdown-list #rAlbumExcluir {color:var(--danger, var(--text));}
+/* A área do álbum não repete Novo álbum nem o Adicionar do cabeçalho. */
+#v-gallery .albums-section:has(#albumToolbar:not([hidden])) .sec-h,
+#v-rotation-gallery .auto-albums:has(#rAlbumToolbar:not([hidden])) .sec-h {margin-bottom:6px;}
+#v-rotation-gallery.album-open .rotation-import {display:none!important;}
+#v-rotation-gallery.album-open .auto-albums {margin-top:0;}
+#v-gallery .albums-section,#v-rotation-gallery .albums-section {min-width:0;}
+@media(max-width:390px){
+  .album-toolbar{gap:6px;}
+  .album-back{font-size:13px;}
+  .album-add-main{padding-inline:10px;}
+  .album-tools{gap:5px;}
+}

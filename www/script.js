@@ -1202,6 +1202,9 @@ function desenharAlbums(){
   const atual = albunsFixos().find(a => a.id === albumAtual);
   if (albumAtual && !atual) albumAtual = null;
   $('albumVoltar').hidden = !albumAtual;
+  $('albumToolbar').hidden = !atual;
+  $('albumCriar').hidden = !!atual;
+  $('gAdd').hidden = !!atual;
   $('albumEditar').hidden = !atual;
   $('albumExcluir').hidden = !atual;
   $('albumTitulo').textContent = atual ? atual.name : 'Meus álbuns';
@@ -1278,6 +1281,10 @@ function desenharAlbunsRotacao(){
   const atual = albunsRotacao().find(a => a.id === albumRotacaoAtual);
   if (albumRotacaoAtual && !atual) albumRotacaoAtual = null;
   $('rAlbumTitulo').textContent = atual ? atual.name : 'Álbuns automáticos';
+  $('rAlbumToolbar').hidden = !atual;
+  $('rAlbumCriar').hidden = !!atual;
+  $('rAdd').hidden = !!atual;
+  $('v-rotation-gallery').classList.toggle('album-open', !!atual);
   ['rAlbumVoltar','rAlbumEditar','rAlbumExcluir'].forEach(id => $(id).hidden = !atual);
   $('rAlbumLista').hidden = !!atual;
   $('rAlbumLista').innerHTML = albunsRotacao().map(a => {
@@ -1705,3 +1712,16 @@ $('sliders').addEventListener('input', () => [...$('estilos').children].forEach(
 
 /* Arranque */
 setWall(wall);
+
+/* Controles compactos de álbum: fecha os menus sem alterar as ações existentes. */
+const dropdownsAlbum = ['albumAddMenu','albumMoreMenu','rAlbumAddMenu','rAlbumMoreMenu'];
+function fecharMenusAlbum(excecao=null){
+  dropdownsAlbum.forEach(id => { const d=$(id); if(d && id!==excecao) d.open=false; });
+}
+document.addEventListener('click', e => {
+  const dentro = e.target.closest('.album-dropdown');
+  if (!dentro) { fecharMenusAlbum(); return; }
+  const aberto = dentro.id;
+  if (e.target.closest('summary')) fecharMenusAlbum(aberto);
+  else if (e.target.closest('button')) fecharMenusAlbum();
+});
