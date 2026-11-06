@@ -1601,9 +1601,9 @@ button#albumCriar .ui-icon, button#rAlbumCriar .ui-icon, button#gAdd .ui-icon, b
    Expandir não anima o tamanho do canvas, para evitar travadas na renderização. */
 @media (max-width: 820px) {
   .app > .stage {
-    height: 48dvh;
+    height: 65dvh;
     min-height: 0;
-    flex: 0 0 48dvh;
+    flex: 0 0 65dvh;
     overflow: hidden;
     transition: none;
   }
