@@ -1,0 +1,5 @@
+# Dependências instaladas localmente
+node_modules/
+
+# Arquivos temporários
+npm-debug.log*
