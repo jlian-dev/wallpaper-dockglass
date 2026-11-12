@@ -1,5 +1,18 @@
-# Dependências instaladas localmente
-node_modules/
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
 
-# Arquivos temporários
-npm-debug.log*
+local.properties
+*.jks
+*.iml
+*.apk
+*.aab
+
+*.keystore
+*.env
+
+captures/
+.externalNativeBuild/
+.cxx/

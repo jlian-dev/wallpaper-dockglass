@@ -1,23 +1,17 @@
-# 🖼️ Wallpaper DockGlass
+# Dock Líquida (nativo)
 
-O **Wallpaper DockGlass** é um aplicativo Android projetado para transformar e personalizar wallpapers, aplicando um efeito moderno de barra/dock estilo *glassmorphism* (vidro translúcido) sobre as suas imagens.
+Versão 100% nativa (Kotlin + Jetpack Compose, **sem WebView**) do Wallpaper DockGlass.
 
-## 🚀 Funcionalidades
+- `glass/` — motor do Liquid Glass (Kotlin puro; refração por lei de Snell, bisel, aberração cromática, brilho, sombra). Port fiel do `script.js`.
+- `render/` — decodificação (EXIF), corte/zoom/desfoque e pipeline da prévia.
+- `data/` — biblioteca (wallpapers, álbuns, ajustes) e preferências.
+- `system/` — aplicar wallpaper, salvar na Galeria, sobreposição "Alinhar" e troca automática (WorkManager).
+- `ui/` — telas em Compose.
 
-* 🔮 **Efeito Glassmorphism:** Aplicação de efeito de vidro translúcido (desfocagem, refração e bordas suaves) na área de dock da imagem.
-* 📐 **Preservação de Alta Resolução:** Processamento de imagens garantindo exportação na qualidade máxima original.
-* 🎨 **Ajustes Personalizados:** Altere parâmetros como opacidade, desfoque (*blur*), bordas e posições para obter o visual ideal.
-* 📁 **Suporte Flexível de Imagens:** Suporta o envio de arquivos de alta resolução com limite ampliado de tamanho.
-* 🔒 **Processamento Local:** Processamento feito diretamente no dispositivo, garantindo privacidade e agilidade.
+Build: `gradle assembleDebug` (Gradle 8.9, JDK 17) ou o workflow **Gerar APK** do GitHub Actions.
+Mesmo `applicationId` do app anterior (`com.dockliquida.app`): se assinar com a mesma chave, o APK atualiza o antigo.
 
-## 📱 Como Instalar
-
-1. Acesse a aba de **Releases** aqui no repositório GitHub.
-2. Baixe o arquivo `.apk` mais recente.
-3. No seu dispositivo Android, abra o arquivo baixado para realizar a instalação (caso necessário, permita a instalação de fontes desconhecidas nas configurações do seu celular).
-
-## 📄 Licença
-
-Este projeto está sob a licença **MIT**. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
-✨ Desenvolvido por [jlian-dev](https://github.com/jlian-dev)
+## Novidades da 2.1.0
+- **Trocar foto** no editor (botão de vidro no topo): troca a imagem mantendo dock, álbum e tamanho.
+- **Backup `.dckl`** (Ajustes › Backup): arquivo compactado (ZIP com extensão própria) com imagens, álbuns, ajustes das docks e preferências; também restaura.
+- Barra inferior mais fina, painel do álbum com um único menu ⋮ e prévia maior (Início e editor).
