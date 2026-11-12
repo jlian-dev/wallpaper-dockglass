@@ -36,7 +36,6 @@ O **Dock Líquida** é um aplicativo de personalização de wallpapers para Andr
 FIM DAS CAPTURAS -->
 
 **Arquivos esperados:** `inicio.png` · `editor.png` · `galeria.png` · `ajustes.png`  
-*Dica: capture a tela sem notificações pessoais e mantenha proporções semelhantes para um resultado uniforme.*
 
 ## 🧩 Funcionalidades
 
