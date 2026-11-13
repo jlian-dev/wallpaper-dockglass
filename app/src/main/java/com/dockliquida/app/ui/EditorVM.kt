@@ -14,6 +14,9 @@ import com.dockliquida.app.data.OutMode
 import com.dockliquida.app.data.Prefs
 import com.dockliquida.app.data.Store
 import com.dockliquida.app.data.Wall
+import com.dockliquida.app.data.glassFromJson
+import com.dockliquida.app.data.toJson
+import org.json.JSONObject
 import com.dockliquida.app.glass.GlassParams
 import com.dockliquida.app.glass.GlassStyle
 import com.dockliquida.app.render.ImageIo
@@ -258,6 +261,59 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
     fun applyOverlay(r: OverlayResult) {
         update { it.copy(x = r.x, y = r.y, w = r.w, h = r.h, r = r.r) }
         DockOverlay.consumeResult()
+    }
+
+    // =====================================================================  preset: salva e importa apenas a Dock
+    /** Arquivo de preset, separado do backup .dckl e sem o wallpaper. */
+    fun exportDock(uri: Uri) {
+        if (wallRef == null) { message = "Abra um wallpaper antes de salvar a Dock."; return }
+        val preset = JSONObject()
+            .put("format", "dockliquida.dock")
+            .put("version", 1)
+            .put("outW", outW)
+            .put("outH", outH)
+            // O enquadramento pertence à foto, e não ao preset de Dock.
+            .put("dock", params.copy(zoom = 100, panX = 0, panY = 0, wpBlur = 0).toJson())
+            .toString(2)
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    ctx.contentResolver.openOutputStream(uri, "wt")?.use { stream ->
+                        stream.write(preset.toByteArray(Charsets.UTF_8))
+                    } ?: error("Não foi possível abrir o arquivo de destino.")
+                }
+                message = "Dock salva! O wallpaper não foi incluído."
+            } catch (e: Exception) { message = "Erro ao salvar Dock: ${e.message}" }
+        }
+    }
+
+    fun importDock(uri: Uri) {
+        if (wallRef == null) { message = "Abra um wallpaper antes de importar uma Dock."; return }
+        viewModelScope.launch {
+            try {
+                val text = withContext(Dispatchers.IO) {
+                    ctx.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                        reader.readText().also { require(it.length <= 64_000) { "Arquivo muito grande para um preset." } }
+                    } ?: error("Não foi possível abrir o arquivo.")
+                }
+                val root = JSONObject(text)
+                require(root.optString("format") == "dockliquida.dock" && root.optInt("version") == 1) {
+                    "Este arquivo não é um preset de Dock compatível."
+                }
+                val sourceW = root.getInt("outW")
+                val sourceH = root.getInt("outH")
+                require(sourceW in 64..8192 && sourceH in 64..8192) { "Tamanho original inválido." }
+                val saved = glassFromJson(root.getJSONObject("dock"))
+                require(saved.w in 20..8192 && saved.h in 20..8192 && saved.r >= 0) { "Dimensões da Dock inválidas." }
+                // Escala proporcional para diferentes resoluções e preserva a foto atual.
+                val scaled = saved.resized(outW.toDouble() / sourceW, outH.toDouble() / sourceH)
+                update { current -> scaled.copy(
+                    zoom = current.zoom, panX = current.panX,
+                    panY = current.panY, wpBlur = current.wpBlur
+                ) }
+                message = "Dock importada e aplicada ao wallpaper atual."
+            } catch (e: Exception) { message = "Não foi possível importar: ${e.message}" }
+        }
     }
 
     // =====================================================================  exportar / aplicar

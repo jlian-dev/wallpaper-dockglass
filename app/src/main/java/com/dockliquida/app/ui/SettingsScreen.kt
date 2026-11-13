@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.dockliquida.app.BuildConfig
 import com.dockliquida.app.data.Backup
+import com.dockliquida.app.system.RotationOutcome
 import com.dockliquida.app.system.RotationWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -67,6 +68,7 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
     val queue = remember(walls) { vm.store.rotationQueue().size }
 
     // ---- backup .dckl ----
+    var switching by remember { mutableStateOf(false) }             // true enquanto "Trocar agora" está renderizando
     var busy by remember { mutableStateOf<String?>(null) }          // texto do "aguarde" (null = livre)
     var askRestore by remember { mutableStateOf(false) }            // confirmação antes de restaurar
     // Exportar: o seletor do Android deixa você escolher a pasta e o nome (sugerimos DockLiquida_data.dckl)
@@ -85,7 +87,7 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
             busy = "Restaurando backup…"
             try {
                 val n = Backup.import(ctx, uri)
-                if (p.rotOn.value) RotationWorker.schedule(ctx, p.rotHours.value) else RotationWorker.cancel(ctx)   // reaplica a troca automática
+                // (o agendamento da troca automática já é reaplicado dentro de Backup.import)
                 Toast.makeText(ctx, "Backup restaurado: $n imagem(ns).", Toast.LENGTH_LONG).show()
             } catch (e: Throwable) { Toast.makeText(ctx, e.message ?: "Falha ao restaurar.", Toast.LENGTH_LONG).show() } finally { busy = null }
         }
@@ -138,12 +140,27 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
             Segmented(listOf(6, 12, 24, 48).map { "$it" to "$it h" }, hours.toString(), { p.setRotHours(it.toInt()); if (rotOn) RotationWorker.schedule(ctx, it.toInt()) }, Modifier.fillMaxWidth())
             Text("Aplicar em", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Segmented(listOf("home" to "Início", "lock" to "Bloqueio", "both" to "Ambas"), target, { p.setRotTarget(it) }, Modifier.fillMaxWidth())
-            FilledTonalButton(onClick = {
-                scope.launch {
-                    val ok = withContext(Dispatchers.Default) { RotationWorker.applyNext(ctx) }
-                    Toast.makeText(ctx, if (ok) "Wallpaper trocado!" else "Adicione imagens na galeria automática.", Toast.LENGTH_SHORT).show()
-                }
-            }, Modifier.fillMaxWidth()) { Text("Trocar agora") }
+            // Desliga o botão enquanto renderiza: toques repetidos abriam várias renderizações pesadas ao mesmo tempo
+            // (risco de estourar a memória) e avançavam a fila mais de uma vez.
+            FilledTonalButton(
+                enabled = !switching,
+                onClick = {
+                    switching = true
+                    scope.launch {
+                        try {
+                            // IO (e não Default): a troca bloqueia esperando disco/trava, o que não combina com o pool de cálculo.
+                            val result = withContext(Dispatchers.IO) { RotationWorker.applyNextResult(ctx) }
+                            val msg = when (result) {
+                                RotationOutcome.APPLIED -> "Wallpaper trocado!"
+                                RotationOutcome.NO_IMAGES -> "Adicione imagens na galeria automática."
+                                else -> "Não foi possível trocar o wallpaper. Tente novamente."
+                            }
+                            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                        } finally { switching = false }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Trocar agora") }
         }
         SectionCard("Backup") {
             Text(

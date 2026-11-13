@@ -44,12 +44,20 @@ object Actions {
     /** Aplica o bitmap como papel de parede. Chamar FORA da thread principal (é pesado). */
     fun applyWallpaper(ctx: Context, bmp: Bitmap, target: WallTarget) {
         val wm = WallpaperManager.getInstance(ctx)
+        // Aparelhos com restrição (perfil de trabalho, modo infantil, ROM sem suporte) recusam o wallpaper.
+        // Avisar aqui dá uma mensagem clara em vez de "trocar" sem trocar nada.
+        if (!wm.isWallpaperSupported || !wm.isSetWallpaperAllowed) {
+            throw IllegalStateException("O sistema não permite alterar o papel de parede neste aparelho.")
+        }
         val flags = when (target) {
             WallTarget.HOME -> WallpaperManager.FLAG_SYSTEM
             WallTarget.LOCK -> WallpaperManager.FLAG_LOCK
             WallTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
         }
-        wm.setBitmap(bmp, null, true, flags)                         // visibleCropHint = null: usa a imagem inteira
+        // setBitmap devolve o ID do novo wallpaper, ou 0 se o Android NÃO conseguiu aplicar. Antes esse valor era
+        // ignorado: a troca automática achava que deu certo e avançava a fila sem o wallpaper ter mudado.
+        val id = wm.setBitmap(bmp, null, true, flags)                // visibleCropHint = null: usa a imagem inteira
+        if (id == 0) throw IllegalStateException("O Android recusou aplicar o papel de parede.")
     }
 
     /**

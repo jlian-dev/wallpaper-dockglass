@@ -1,18 +1,26 @@
 package com.dockliquida.app.ui
 
 import android.widget.Toast
+import android.annotation.SuppressLint
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,10 +31,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -34,7 +45,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,11 +54,15 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,9 +71,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -80,20 +94,30 @@ import com.dockliquida.app.system.DockOverlay
 import com.dockliquida.app.system.WallTarget
 import kotlin.math.roundToInt
 
+
 /*
  * EditorScreen.kt — editor no layout da versão anterior: botões de vidro no topo (voltar / ampliar), prévia no meio
  * e painel Material 3 embaixo (abas Base | Dock + menu ⋮). O painel NUNCA cobre a imagem.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
     val ctx = LocalContext.current
     var big by remember { mutableStateOf(false) }          // prévia ampliada (esconde o painel)
     var tab by remember { mutableStateOf("base") }         // base | dock
     var menu by remember { mutableStateOf(false) }
-    var askTarget by remember { mutableStateOf(false) }    // diálogo "Aplicar em…"
+    var askTarget by remember { mutableStateOf(false) }    // painel inferior "Aplicar em…"
+    var targetSelected by remember { mutableStateOf(WallTarget.values().first()) }
     val cs = MaterialTheme.colorScheme
     // Seletor do Android para escolher a nova foto (não precisa de permissão de armazenamento)
     val swapPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) vm.replaceImage(uri) }
+    // Android Storage Access Framework: usuário escolhe onde guardar/abrir a Dock.
+    val exportDock = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) vm.exportDock(uri)
+    }
+    val importDock = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importDock(uri)
+    }
 
     LaunchedEffect(wallId) { vm.open(wallId) }
     BackHandler { vm.close(); onClose() }
@@ -122,13 +146,41 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
                     Surface(Modifier.fillMaxWidth().weight(1f), shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = cs.surfaceContainer, tonalElevation = 2.dp) {
                         Column(Modifier.fillMaxSize()) {
                             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Segmented(listOf("base" to "Base", "dock" to "Dock"), tab, { tab = it }, Modifier.weight(1f))
+                                EditorSlidingTabs(tab, onSelect = { tab = it }, modifier = Modifier.weight(1f))
                                 Box(Modifier.padding(start = 10.dp)) {
                                     FilledTonalIconButton(onClick = { menu = true }, Modifier.size(52.dp)) { Icon(Icons.Rounded.MoreVert, "Mais opções") }
-                                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                        DropdownMenuItem(text = { Text("Baixar PNG") }, onClick = { menu = false; vm.exportPng(false) })
-                                        DropdownMenuItem(text = { Text("Baixar em alta resolução") }, onClick = { menu = false; vm.exportPng(true) })
-                                        DropdownMenuItem(text = { Text("Aplicar como wallpaper") }, onClick = { menu = false; askTarget = true })
+                                    DropdownMenu(
+                                        expanded = menu,
+                                        onDismissRequest = { menu = false },
+                                        modifier = Modifier.widthIn(min = 250.dp, max = 290.dp)
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Aplicar como wallpaper") },
+                                            leadingIcon = { Icon(PopupIcons.Phone, null, Modifier.size(18.dp)) },
+                                            onClick = { menu = false; askTarget = true }
+                                        )
+                                        HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = cs.outlineVariant)
+                                        DropdownMenuItem(
+                                            text = { Text("Baixar em alta resolução") },
+                                            leadingIcon = { Icon(PopupIcons.Download, null, Modifier.size(18.dp)) },
+                                            onClick = { menu = false; vm.exportPng(true) }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Baixar PNG") },
+                                            leadingIcon = { Icon(DockIcons.Gallery, null, Modifier.size(18.dp)) },
+                                            onClick = { menu = false; vm.exportPng(false) }
+                                        )
+                                        HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = cs.outlineVariant)
+                                        DropdownMenuItem(
+                                            text = { Text("Salvar só a Dock") },
+                                            leadingIcon = { Icon(PopupIcons.Save, null, Modifier.size(18.dp)) },
+                                            onClick = { menu = false; exportDock.launch("DockLiquida_Dock.json") }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Importar Dock") },
+                                            leadingIcon = { Icon(PopupIcons.Folder, null, Modifier.size(18.dp)) },
+                                            onClick = { menu = false; importDock.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }
+                                        )
                                     }
                                 }
                             }
@@ -155,12 +207,58 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
     }
 
     if (askTarget) {
-        AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = { askTarget = false },
-            title = { Text("Aplicar wallpaper em") },
-            text = { Column { for (t in WallTarget.values()) TextButton(onClick = { askTarget = false; vm.applyWallpaper(t) }, modifier = Modifier.fillMaxWidth()) { Text(t.label) } } },
-            confirmButton = {}, dismissButton = { TextButton(onClick = { askTarget = false }) { Text("Cancelar") } }
-        )
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            containerColor = cs.surfaceContainerHigh
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Text("Aplicar wallpaper em", style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(bottom = 6.dp))
+                WallTarget.values().forEach { target ->
+                    val active = targetSelected == target
+                    Surface(
+                        onClick = { targetSelected = target },
+                        shape = RoundedCornerShape(18.dp),
+                        color = if (active) cs.primaryContainer else cs.surfaceContainer,
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 58.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                 when (target) {
+                                     WallTarget.HOME -> PopupIcons.Phone
+                                     WallTarget.LOCK -> PopupIcons.Lock
+                                     WallTarget.BOTH -> DockIcons.Gallery
+                                 },
+                                 null, Modifier.size(18.dp),
+                                 tint = if (active) cs.onPrimaryContainer else cs.onSurfaceVariant
+                             )
+                            Text(target.label, Modifier.weight(1f),
+                                color = if (active) cs.onPrimaryContainer else cs.onSurface)
+                            if (active) Icon(PopupIcons.Check, "Selecionado", Modifier.size(18.dp),
+                                tint = cs.onPrimaryContainer)
+                        }
+                    }
+                }
+                Button(
+                    onClick = { val chosen = targetSelected; askTarget = false; vm.applyWallpaper(chosen) },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(32.dp)
+                ) { Text("Aplicar") }
+                TextButton(
+                    onClick = { askTarget = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Cancelar") }
+            }
+        }
     }
 }
 
@@ -224,6 +322,88 @@ private fun PreviewArea(vm: EditorVM, modifier: Modifier) {
 }
 
 // ============================================================================================ aba BASE
+
+/** Uma unica pill desliza entre Base e Dock, sem alterar os outros seletores. */
+@Composable
+private fun EditorSlidingTabs(
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(22.dp),
+        color = cs.surfaceContainerHighest
+    ) {
+        // Box comum: nao precisamos mais medir a largura em dp, entao BoxWithConstraints saiu.
+        Box(Modifier.padding(4.dp)) {
+
+            // bias = posicao horizontal da pill: -1f = encostada na esquerda (Base), 1f = na direita (Dock).
+            val pillBias by animateFloatAsState(
+                targetValue = if (selected == "base") -1f else 1f, // valor final da animacao
+                animationSpec = tween(
+                    durationMillis = 280,                // duracao do deslize
+                    easing = FastOutSlowInEasing         // comeca rapido e termina suave
+                ),
+                label = "editorTabSlide"
+            )
+
+            // Fundo da selecao: existe uma unica pill que muda de posicao.
+            // matchParentSize() = ocupa exatamente o tamanho da Row de abas (sem influenciar nele).
+            Box(Modifier.matchParentSize()) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.5f)   // a pill ocupa metade da largura (uma aba)
+                        .fillMaxHeight()      // e toda a altura
+                        // BiasAlignment posiciona a pill: -1 esquerda, 0 centro, 1 direita.
+                        // Como a pill tem metade da largura, ela vai de uma aba ate a outra.
+                        .align(BiasAlignment(horizontalBias = pillBias, verticalBias = 0f))
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(cs.primaryContainer)
+                )
+            }
+
+            Row(Modifier.fillMaxWidth()) {
+                for ((key, title) in listOf("base" to "Base", "dock" to "Dock")) {
+                    val active = selected == key
+
+                    // Guarda o "estado de interação" (pressionado, foco...) desta aba.
+                    // Só precisamos dele para dizer ao clickable que NÃO queremos o efeito de ripple.
+                    val interaction = remember { MutableInteractionSource() }
+
+                    val textColor by animateColorAsState(
+                        targetValue = if (active) cs.onPrimaryContainer else cs.onSurfaceVariant,
+                        animationSpec = tween(durationMillis = 220),
+                        label = "editorTabText"
+                    )
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(18.dp))
+                            // indication = null desliga o ripple/destaque cinza padrão do clique.
+                            // Ele era o "fantasma" claro que aparecia por cima da pill durante a troca.
+                            // Quem dá o feedback visual agora é só a pill deslizando.
+                            .clickable(
+                                interactionSource = interaction,
+                                indication = null
+                            ) { onSelect(key) }
+                            .padding(vertical = 12.dp, horizontal = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            color = textColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun BasePanel(vm: EditorVM, onSwapPhoto: () -> Unit) {
     val p = vm.params
@@ -312,10 +492,39 @@ private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         StepBtn("−1") { onChange(value - 1) }
+        var editing by remember { mutableStateOf(false) }
+        var typed by remember { mutableStateOf("") }
         Box(
-            Modifier.padding(horizontal = 6.dp).width(88.dp).height(48.dp).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp)),
+            Modifier.padding(horizontal = 6.dp).width(88.dp).height(48.dp)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+                .clickable { typed = value.toString(); editing = true },
             contentAlignment = Alignment.Center
         ) { Text("$value", style = MaterialTheme.typography.bodyLarge) }
+        if (editing) {
+            AlertDialog(
+                onDismissRequest = { editing = false },
+                title = { Text(label) },
+                text = {
+                    OutlinedTextField(
+                        value = typed,
+                        onValueChange = { input ->
+                            if (input.length <= 10 && input.all { it.isDigit() || it == '-' } && input.count { it == '-' } <= 1 && (input.indexOf('-') <= 0)) typed = input
+                        },
+                        label = { Text("Valor em pixels") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val newValue = typed.toIntOrNull()
+                        if (newValue != null) { onChange(newValue); editing = false }
+                    }, enabled = typed.toIntOrNull() != null) { Text("Confirmar") }
+                },
+                dismissButton = { TextButton(onClick = { editing = false }) { Text("Cancelar") } }
+            )
+        }
         StepBtn("+1") { onChange(value + 1) }
     }
 }

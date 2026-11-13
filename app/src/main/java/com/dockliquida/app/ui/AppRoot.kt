@@ -1,5 +1,7 @@
 package com.dockliquida.app.ui
 
+import android.os.SystemClock
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -26,10 +28,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
@@ -47,8 +51,15 @@ fun AppRoot() {
     val theme by app.prefs.theme.collectAsState()
     val glassFull by app.prefs.glassFull.collectAsState()
     val dynamicColors by app.prefs.dynamicColors.collectAsState()
-    var tab by rememberSaveable { mutableStateOf("home") }
+    // Historico real de abas: voltar remove a ultima, sem alternar em circulo.
+    var tabHistory by rememberSaveable { mutableStateOf(listOf("home")) }
+    val tab = tabHistory.last()
+    fun openTab(destination: String) {
+        if (tab != destination) tabHistory = tabHistory + destination
+    }
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    var lastExitBack by remember { mutableLongStateOf(0L) }
 
     DockTheme(theme, dynamicColors = dynamicColors) {
         CompositionLocalProvider(LocalGlassFull provides glassFull) {
@@ -57,9 +68,24 @@ fun AppRoot() {
                 if (id != null) {
                     EditorScreen(editor, id) { editing = null }
                 } else {
-                    BackHandler(enabled = tab != "home") { tab = "home" }
+                    // Gestos do album e da selecao sao tratados dentro de GalleryScreen.
+                    // Na raiz, um gesto volta a aba anterior; dois gestos proximos saem do app.
+                    BackHandler {
+                        if (tabHistory.size > 1) {
+                            tabHistory = tabHistory.dropLast(1)
+                            lastExitBack = 0L
+                        } else {
+                            val now = SystemClock.elapsedRealtime()
+                            if (now - lastExitBack <= 2000L) {
+                                (context as? android.app.Activity)?.finish()
+                            } else {
+                                lastExitBack = now
+                                Toast.makeText(context, "Deslize novamente para sair", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
                     val navSpace = 76.dp                          // espaço reservado para a barra inferior não cobrir o fim da lista
-                    val goHome = { tab = "home" }
+                    val goHome = { openTab("home") }
                     GlassScope(
                         Modifier.fillMaxSize(),
                         chrome = {
@@ -70,10 +96,10 @@ fun AppRoot() {
                             ) {
                                 // Barra fina: ~46 dp de altura, ocupa só o necessário e fica centralizada
                                 Row(Modifier.padding(horizontal = 6.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    NavItem(tab == "home", Icons.Rounded.Home, "Início") { tab = "home" }
-                                    NavItem(tab == "gallery", DockIcons.Gallery, "Galeria") { tab = "gallery" }
-                                    NavItem(tab == "auto", Icons.Rounded.Refresh, "Auto") { tab = "auto" }
-                                    NavItem(tab == "settings", Icons.Rounded.Settings, "Ajustes") { tab = "settings" }
+                                    NavItem(tab == "home", Icons.Rounded.Home, "Início") { openTab("home") }
+                                    NavItem(tab == "gallery", DockIcons.Gallery, "Galeria") { openTab("gallery") }
+                                    NavItem(tab == "auto", Icons.Rounded.Refresh, "Auto") { openTab("auto") }
+                                    NavItem(tab == "settings", Icons.Rounded.Settings, "Ajustes") { openTab("settings") }
                                 }
                             }
                         }

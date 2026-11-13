@@ -179,7 +179,7 @@ fun GlassSurface(
 /** Botão quadrado-arredondado de vidro só com ícone (voltar, ampliar…). Mesmo formato da versão anterior. */
 @Composable
 fun GlassIconButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    GlassSurface(modifier.size(52.dp), RoundedCornerShape(18.dp), onClick = onClick) {
+    GlassSurface(modifier.size(52.dp), RoundedCornerShape(32.dp), onClick = onClick) {
         Icon(icon, description, Modifier.align(Alignment.Center).size(24.dp), tint = MaterialTheme.colorScheme.onSurface)
     }
 }
@@ -201,12 +201,12 @@ fun NavItem(on: Boolean, icon: ImageVector, label: String, modifier: Modifier = 
     val cs = MaterialTheme.colorScheme
     // Apenas a selecao muda suavemente; mantemos a mesma forma, altura e efeito de vidro.
     val tint by animateColorAsState(
-        targetValue = if (on) cs.onPrimaryContainer else cs.onSurfaceVariant,
-        animationSpec = tween(durationMillis = 220),
+        targetValue = if (on) cs.onSurface else cs.onSurfaceVariant,
+        animationSpec = tween(durationMillis = 320),
         label = "navIconColor"
     )
     val itemBackground by animateColorAsState(
-        targetValue = if (on) cs.primaryContainer.copy(alpha = 0.80f) else Color.Transparent,
+        targetValue = if (on) cs.primaryContainer.copy(alpha = 0.35f) else Color.Transparent,
         animationSpec = tween(durationMillis = 220),
         label = "navItemBackground"
     )

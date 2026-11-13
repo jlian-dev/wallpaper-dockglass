@@ -2,6 +2,7 @@ package com.dockliquida.app.data
 
 import android.content.Context
 import android.net.Uri
+import com.dockliquida.app.system.RotationWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -88,14 +89,21 @@ object Backup {
             val lib = library ?: throw IllegalStateException("Backup incompleto (sem biblioteca).")
             JSONObject(lib)                                          // valida o JSON antes de apagar qualquer coisa
 
-            store.wipeAll()                                          // a partir daqui os dados atuais são substituídos
-            tmp.listFiles()?.forEach { f ->
-                val dst = File(store.wallsDir(), f.name)
-                if (!f.renameTo(dst)) f.copyTo(dst, overwrite = true)
+            // Segura a trava da troca automática: se uma troca estiver renderizando agora, esperamos ela terminar, e
+            // nenhuma começa enquanto as imagens estão sendo apagadas e trocadas (antes a troca lia arquivos sumindo).
+            synchronized(RotationWorker.applyLock) {
+                store.wipeAll()                                      // a partir daqui os dados atuais são substituídos
+                tmp.listFiles()?.forEach { f ->
+                    val dst = File(store.wallsDir(), f.name)
+                    if (!f.renameTo(dst)) f.copyTo(dst, overwrite = true)
+                }
+                store.restoreIndex(lib)
+                prefsJson?.let { prefs.importJson(it) }
             }
-            store.restoreIndex(lib)
-            prefsJson?.let { prefs.importJson(it) }
-            store.rebuildThumbs()
+            // O backup pode trazer "troca ligada/desligada" e outro intervalo: reaplica no WorkManager aqui, junto
+            // com os dados, e não só na tela (se a tela fosse fechada no meio, o agendamento ficaria errado).
+            RotationWorker.reschedule(ctx)
+            store.rebuildThumbs()                                    // lento e a troca não usa miniaturas: fica fora da trava
             store.walls.value.size
         } finally { tmp.deleteRecursively() }
     }

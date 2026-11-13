@@ -7,10 +7,12 @@ import android.provider.OpenableColumns
 import com.dockliquida.app.glass.BevelProfile
 import com.dockliquida.app.glass.GlassParams
 import com.dockliquida.app.render.ImageIo
+import com.dockliquida.app.system.Actions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -143,7 +145,8 @@ class Store private constructor(private val app: Context) {
     @Synchronized private fun persist() {
         val tmp = File(app.filesDir, "library.json.tmp")             // grava num temporário e troca: nunca fica pela metade
         tmp.writeText(buildIndex().toString())
-        tmp.renameTo(indexFile)
+        // renameTo devolve false em vez de lançar erro: antes uma falha aqui perdia a gravação em silêncio.
+        if (!tmp.renameTo(indexFile)) { tmp.copyTo(indexFile, overwrite = true); tmp.delete() }
     }
 
     // ------------------------------------------------------------------ wallpapers
@@ -152,6 +155,10 @@ class Store private constructor(private val app: Context) {
                        dockFor: (outW: Int, outH: Int) -> GlassParams): List<Wall> = importMutex.withLock {
         withContext(Dispatchers.IO) {
             val added = ArrayList<Wall>()
+            // Padrão apenas para novas imagens. Não modifica ajustes de wallpapers já salvos.
+            val (deviceW, deviceH) = Actions.deviceSize(app)
+            val outputW = deviceW.coerceIn(64, 8192)
+            val outputH = deviceH.coerceIn(64, 8192)
             // A comparação é global: inclui imagens em álbuns e nas duas galerias.
             // Calcula uma vez por lote; imagens inválidas/ausentes são ignoradas.
             val knownHashes = _walls.value.mapNotNull { existing ->
@@ -180,10 +187,8 @@ class Store private constructor(private val app: Context) {
                         val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                         if (c.moveToFirst() && i >= 0) c.getString(i) else null
                     } ?: "imagem"
-                    val ow = info.width.coerceIn(64, 8192)
-                    val oh = info.height.coerceIn(64, 8192)
                     added.add(Wall(id, kind, name, System.currentTimeMillis(), albumId, info.width, info.height,
-                        OutMode.AUTO, ow, oh, dockFor(ow, oh)))
+                        OutMode.DEVICE, outputW, outputH, dockFor(outputW, outputH)))
                     knownHashes.add(hash) // também impede duplicatas dentro da mesma seleção
                 } catch (e: Exception) {
                     f.delete()
@@ -191,7 +196,7 @@ class Store private constructor(private val app: Context) {
                 }
             }
             if (added.isNotEmpty()) {
-                _walls.value = _walls.value + added
+                _walls.update { it + added }                          // update{} é atômico: não perde escritas de outras threads
                 persist()
             }
             added
@@ -235,7 +240,7 @@ class Store private constructor(private val app: Context) {
                 added.add(src.copy(id = newId, kind = kind, albumId = albumId, addedAt = System.currentTimeMillis()))
             } catch (e: Exception) { file(newId).delete(); thumb(newId).delete() }
         }
-        _walls.value = _walls.value + added
+        _walls.update { it + added }
         persist()
         added.size
     }
@@ -255,7 +260,7 @@ class Store private constructor(private val app: Context) {
             dst.delete()
             if (!tmp.renameTo(dst)) { tmp.copyTo(dst, overwrite = true); tmp.delete() }
             makeThumb(id)
-            _walls.value = _walls.value.map { if (it.id == id) it.copy(origW = info.width, origH = info.height, rev = it.rev + 1) else it }
+            _walls.update { list -> list.map { if (it.id == id) it.copy(origW = info.width, origH = info.height, rev = it.rev + 1) else it } }
             persist()
             info.width to info.height
         } catch (e: Exception) { tmp.delete(); null }
@@ -275,7 +280,7 @@ class Store private constructor(private val app: Context) {
     /** Aplica o índice de um backup. Wallpapers cujo arquivo de imagem não veio no backup são descartados. */
     fun restoreIndex(json: String) {
         applyIndex(json)
-        _walls.value = _walls.value.filter { file(it.id).exists() }
+        _walls.update { list -> list.filter { file(it.id).exists() } }
         persist()
     }
 
@@ -283,38 +288,38 @@ class Store private constructor(private val app: Context) {
     fun rebuildThumbs() { for (w in _walls.value) makeThumb(w.id) }
 
     fun update(w: Wall) {
-        _walls.value = _walls.value.map { if (it.id == w.id) w else it }
+        _walls.update { list -> list.map { if (it.id == w.id) w else it } }
         persist()
     }
 
     fun remove(ids: Collection<String>) {
         for (id in ids) { file(id).delete(); thumb(id).delete() }
-        _walls.value = _walls.value.filter { it.id !in ids }
+        _walls.update { list -> list.filter { it.id !in ids } }
         persist()
     }
 
     fun assignAlbum(ids: Collection<String>, albumId: String?) {
-        _walls.value = _walls.value.map { if (it.id in ids) it.copy(albumId = albumId) else it }
+        _walls.update { list -> list.map { if (it.id in ids) it.copy(albumId = albumId) else it } }
         persist()
     }
 
     // ------------------------------------------------------------------ álbuns
     fun createAlbum(name: String, kind: Kind): Album {
         val a = Album(UUID.randomUUID().toString().take(10), name.trim().ifEmpty { "Novo álbum" }, kind)
-        _albums.value = _albums.value + a; persist(); return a
+        _albums.update { it + a }; persist(); return a
     }
     fun renameAlbum(id: String, name: String) {
-        _albums.value = _albums.value.map { if (it.id == id) it.copy(name = name.trim().ifEmpty { it.name }) else it }; persist()
+        _albums.update { list -> list.map { if (it.id == id) it.copy(name = name.trim().ifEmpty { it.name }) else it } }; persist()
     }
     /** Marca/desmarca o álbum no slideshow da troca automática (máximo de 2 álbuns, como no app web). */
     fun setSlide(id: String, on: Boolean): Boolean {
         val rot = _albums.value.filter { it.kind == Kind.ROTATION }
         if (on && rot.count { it.slide } >= 2) return false
-        _albums.value = _albums.value.map { if (it.id == id) it.copy(slide = on) else it }; persist(); return true
+        _albums.update { list -> list.map { if (it.id == id) it.copy(slide = on) else it } }; persist(); return true
     }
     fun deleteAlbum(id: String) {                                     // as imagens NÃO são apagadas: só saem do álbum
-        _albums.value = _albums.value.filter { it.id != id }
-        _walls.value = _walls.value.map { if (it.albumId == id) it.copy(albumId = null) else it }
+        _albums.update { list -> list.filter { it.id != id } }
+        _walls.update { list -> list.map { if (it.albumId == id) it.copy(albumId = null) else it } }
         persist()
     }
 

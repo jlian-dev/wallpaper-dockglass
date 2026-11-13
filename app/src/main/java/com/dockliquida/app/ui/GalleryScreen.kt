@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -194,11 +195,32 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
                         }
                         Box {
                             FilledTonalIconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Opções do álbum") }
-                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(text = { Text("Adicionar da galeria do app") }, onClick = { menu = false; pick = "app" })
-                                DropdownMenuItem(text = { Text("Adicionar do celular") }, onClick = { menu = false; addFromPhone() })
-                                DropdownMenuItem(text = { Text("Renomear álbum") }, onClick = { menu = false; text = album.name; dialog = "renomear" })
-                                DropdownMenuItem(text = { Text("Excluir álbum") }, onClick = { menu = false; dialog = "apagarAlbum" })
+                            DropdownMenu(
+                                expanded = menu,
+                                onDismissRequest = { menu = false },
+                                modifier = Modifier.widthIn(min = 250.dp, max = 290.dp)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Adicionar do celular") },
+                                    leadingIcon = { Icon(PopupIcons.Phone, null, Modifier.size(18.dp)) },
+                                    onClick = { menu = false; addFromPhone() }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Adicionar da galeria do app") },
+                                    leadingIcon = { Icon(DockIcons.Gallery, null, Modifier.size(18.dp)) },
+                                    onClick = { menu = false; pick = "app" }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Renomear álbum") },
+                                    leadingIcon = { Icon(PopupIcons.Edit, null, Modifier.size(18.dp)) },
+                                    onClick = { menu = false; text = album.name; dialog = "renomear" }
+                                )
+                                HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = cs.outlineVariant)
+                                DropdownMenuItem(
+                                    text = { Text("Excluir álbum", color = cs.error) },
+                                    leadingIcon = { Icon(PopupIcons.Delete, null, Modifier.size(18.dp), tint = cs.error) },
+                                    onClick = { menu = false; dialog = "apagarAlbum" }
+                                )
                             }
                         }
                     }
