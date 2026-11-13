@@ -64,74 +64,76 @@ fun AppRoot() {
     DockTheme(theme, dynamicColors = dynamicColors) {
         CompositionLocalProvider(LocalGlassFull provides glassFull) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-                val id = editing
-                if (id != null) {
-                    EditorScreen(editor, id) { editing = null }
-                } else {
-                    // Gestos do album e da selecao sao tratados dentro de GalleryScreen.
-                    // Na raiz, um gesto volta a aba anterior; dois gestos proximos saem do app.
-                    BackHandler {
-                        if (tabHistory.size > 1) {
-                            tabHistory = tabHistory.dropLast(1)
-                            lastExitBack = 0L
-                        } else {
-                            val now = SystemClock.elapsedRealtime()
-                            if (now - lastExitBack <= 2000L) {
-                                (context as? android.app.Activity)?.finish()
+                AppLaunchScreen {
+                    val id = editing
+                    if (id != null) {
+                        EditorScreen(editor, id) { editing = null }
+                    } else {
+                        // Gestos do album e da selecao sao tratados dentro de GalleryScreen.
+                        // Na raiz, um gesto volta a aba anterior; dois gestos proximos saem do app.
+                        BackHandler {
+                            if (tabHistory.size > 1) {
+                                tabHistory = tabHistory.dropLast(1)
+                                lastExitBack = 0L
                             } else {
-                                lastExitBack = now
-                                Toast.makeText(context, "Deslize novamente para sair", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                    val navSpace = 76.dp                          // espaço reservado para a barra inferior não cobrir o fim da lista
-                    val goHome = { openTab("home") }
-                    GlassScope(
-                        Modifier.fillMaxSize(),
-                        chrome = {
-                            // Barra inferior de vidro: o conteúdo (grade de imagens) rola por baixo e fica desfocado
-                            GlassSurface(
-                                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 10.dp),
-                                CircleShape, elevation = 8.dp
-                            ) {
-                                // Barra fina: ~46 dp de altura, ocupa só o necessário e fica centralizada
-                                Row(Modifier.padding(horizontal = 6.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    NavItem(tab == "home", Icons.Rounded.Home, "Início") { openTab("home") }
-                                    NavItem(tab == "gallery", DockIcons.Gallery, "Galeria") { openTab("gallery") }
-                                    NavItem(tab == "auto", Icons.Rounded.Refresh, "Auto") { openTab("auto") }
-                                    NavItem(tab == "settings", Icons.Rounded.Settings, "Ajustes") { openTab("settings") }
+                                val now = SystemClock.elapsedRealtime()
+                                if (now - lastExitBack <= 2000L) {
+                                    (context as? android.app.Activity)?.finish()
+                                } else {
+                                    lastExitBack = now
+                                    Toast.makeText(context, "Deslize novamente para sair", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
-                    ) {
-                        // Saída e entrada sequenciais: a tela anterior some antes de montar a próxima.
-                        // Isso evita renderizar duas galerias pesadas simultaneamente.
-                        var visibleTab by rememberSaveable { mutableStateOf(tab) }
-                        val screenOpacity = remember { Animatable(1f) }
-                        val screenOffset = remember { Animatable(0f) }
-
-                        LaunchedEffect(tab) {
-                            if (visibleTab != tab) {
-                                screenOpacity.animateTo(0f, animationSpec = tween(95))
-                                visibleTab = tab
-                                screenOffset.snapTo(12f)
-                                coroutineScope {
-                                    launch { screenOpacity.animateTo(1f, animationSpec = tween(210)) }
-                                    launch { screenOffset.animateTo(0f, animationSpec = tween(210)) }
+                        val navSpace = 76.dp                          // espaço reservado para a barra inferior não cobrir o fim da lista
+                        val goHome = { openTab("home") }
+                        GlassScope(
+                            Modifier.fillMaxSize(),
+                            chrome = {
+                                // Barra inferior de vidro: o conteúdo (grade de imagens) rola por baixo e fica desfocado
+                                GlassSurface(
+                                    Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 10.dp),
+                                    CircleShape, elevation = 8.dp
+                                ) {
+                                    // Barra fina: ~46 dp de altura, ocupa só o necessário e fica centralizada
+                                    Row(Modifier.padding(horizontal = 6.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        NavItem(tab == "home", Icons.Rounded.Home, "Início") { openTab("home") }
+                                        NavItem(tab == "gallery", DockIcons.Gallery, "Galeria") { openTab("gallery") }
+                                        NavItem(tab == "auto", Icons.Rounded.Refresh, "Auto") { openTab("auto") }
+                                        NavItem(tab == "settings", Icons.Rounded.Settings, "Ajustes") { openTab("settings") }
+                                    }
                                 }
-                            }
-                        }
-                        Box(
-                            Modifier.fillMaxSize().graphicsLayer {
-                                alpha = screenOpacity.value
-                                translationY = screenOffset.value * density
                             }
                         ) {
-                            when (visibleTab) {
-                                "home" -> HomeScreen(app, { editing = it }, navSpace)
-                                "gallery" -> GalleryScreen(Kind.FIXED, app, { editing = it }, goHome, navSpace)
-                                "auto" -> GalleryScreen(Kind.ROTATION, app, { editing = it }, goHome, navSpace)
-                                else -> SettingsScreen(app, navSpace)
+                            // Saída e entrada sequenciais: a tela anterior some antes de montar a próxima.
+                            // Isso evita renderizar duas galerias pesadas simultaneamente.
+                            var visibleTab by rememberSaveable { mutableStateOf(tab) }
+                            val screenOpacity = remember { Animatable(1f) }
+                            val screenOffset = remember { Animatable(0f) }
+
+                            LaunchedEffect(tab) {
+                                if (visibleTab != tab) {
+                                    screenOpacity.animateTo(0f, animationSpec = tween(95))
+                                    visibleTab = tab
+                                    screenOffset.snapTo(12f)
+                                    coroutineScope {
+                                        launch { screenOpacity.animateTo(1f, animationSpec = tween(210)) }
+                                        launch { screenOffset.animateTo(0f, animationSpec = tween(210)) }
+                                    }
+                                }
+                            }
+                            Box(
+                                Modifier.fillMaxSize().graphicsLayer {
+                                    alpha = screenOpacity.value
+                                    translationY = screenOffset.value * density
+                                }
+                            ) {
+                                when (visibleTab) {
+                                    "home" -> HomeScreen(app, { editing = it }, navSpace)
+                                    "gallery" -> GalleryScreen(Kind.FIXED, app, { editing = it }, goHome, navSpace)
+                                    "auto" -> GalleryScreen(Kind.ROTATION, app, { editing = it }, goHome, navSpace)
+                                    else -> SettingsScreen(app, navSpace)
+                                }
                             }
                         }
                     }
