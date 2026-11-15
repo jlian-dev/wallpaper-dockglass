@@ -171,7 +171,7 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
             OutlinedButton(onClick = { askRestore = true }, Modifier.fillMaxWidth()) { Text("Restaurar backup") }
         }
         SectionCard("Sobre") {
-            Text("Dock Líquida Versão ${BuildConfig.VERSION_NAME})")
+            Text("Dock Líquida Versão ${BuildConfig.VERSION_NAME}")
             Text("Desenvolvido por Jlian-dev", style = MaterialTheme.typography.bodyMedium)
             Text("Efeito de refração baseado no artigo “Liquid Glass in the Browser”, de kube.io.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = { p.resetAll(); RotationWorker.cancel(ctx) }, Modifier.fillMaxWidth()) { Text("Restaurar configurações padrão") }
