@@ -3,6 +3,9 @@
 
     <!-- Aplicar papel de parede (tela inicial / bloqueio) -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Permite PEDIR ao usuário (em um diálogo do Android) que o app fique fora da economia de bateria; sem isso o
+         sistema pode atrasar a troca automática com o app fechado. Ajustes → Troca automática. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Alinhar a dock sobre a tela inicial real (sobreposição) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Só Android 8/9: salvar PNG na pasta Imagens. No Android 10+ não é preciso. -->

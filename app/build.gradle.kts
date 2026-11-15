@@ -21,7 +21,11 @@ android {
     buildTypes {
         // O APK "debug" normal roda MUITO mais devagar no celular (o Android não o otimiza). Desligar o modo
         // depurável faz o mesmo APK de teste rodar na velocidade real; continua assinado com a chave de debug.
-        debug { isDebuggable = false }
+        debug {
+            applicationIdSuffix = ".dock.debug"
+            versionNameSuffix = "-debug"
+            isDebuggable = true
+        }
         release { isMinifyEnabled = false }          // sem ofuscação: build simples e fácil de depurar
     }
     compileOptions {
@@ -40,6 +44,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")

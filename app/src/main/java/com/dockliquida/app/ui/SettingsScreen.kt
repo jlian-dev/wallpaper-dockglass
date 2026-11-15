@@ -1,8 +1,17 @@
 package com.dockliquida.app.ui
 
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Build
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.toArgb
+import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -45,6 +54,9 @@ import com.dockliquida.app.system.RotationWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.widget.Toast
+import android.content.ActivityNotFoundException
+import com.dockliquida.app.system.BatteryOptimization
 
 @Composable
 private fun SwitchRow(title: String, sub: String, on: Boolean, onChange: (Boolean) -> Unit) {
@@ -66,6 +78,15 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
     val rotOn by p.rotOn.collectAsState(); val hours by p.rotHours.collectAsState(); val target by p.rotTarget.collectAsState()
     val walls by vm.store.walls.collectAsState()
     val queue = remember(walls) { vm.store.rotationQueue().size }
+
+    // ---- economia de bateria do Android ----
+    var batteryFree by remember { mutableStateOf(BatteryOptimization.isIgnoring(ctx)) }
+    // O diálogo/lista do sistema devolve o controle aqui ao fechar: relemos o estado real e reaplicamos o agendamento
+    // (o agendamento muda de restrições conforme o app esteja livre ou não da economia de bateria).
+    val batteryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        batteryFree = BatteryOptimization.isIgnoring(ctx)
+        if (rotOn) RotationWorker.schedule(ctx, hours)
+    }
 
     // ---- backup .dckl ----
     var switching by remember { mutableStateOf(false) }             // true enquanto "Trocar agora" está renderizando
@@ -94,10 +115,12 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
     }
 
     Column(Modifier.statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = bottomPad + 16.dp)) {
-        Text("Ajustes", Modifier.padding(top = 24.dp, bottom = 8.dp), style = MaterialTheme.typography.headlineMedium)
-        SectionCard("Aparência") {
+        Text("Ajustes", Modifier.cascadeIn(0).padding(top = 24.dp, bottom = 8.dp), style = MaterialTheme.typography.headlineMedium)
+        SectionCard("Aparência", Modifier.cascadeIn(1)) {
             Text("Tema da interface", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Segmented(listOf("auto" to "Auto", "claro" to "Claro", "escuro" to "Escuro"), theme, { p.setTheme(it) }, Modifier.fillMaxWidth())
+            val amoled by p.amoled.collectAsState()
+            SwitchRow("Modo AMOLED", "Fundo preto puro no tema escuro. Economiza bateria em telas OLED.", amoled) { p.setAmoled(it) }
             SwitchRow("Cores do sistema (Material You)", "Ligado: cores do wallpaper. Desligado: branco, preto e cinza.", dynamicColors) { p.setDynamicColors(it) }
             // A amostra acompanha o tema efetivamente aplicado: Material You ou cores neutras.
             val colors = MaterialTheme.colorScheme
@@ -116,25 +139,99 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
                     colors.secondaryContainer,
                     colors.surfaceVariant
                 ).forEach { color ->
+                    var showColorMenu by remember { mutableStateOf(false) }
+
+                    val hex = String.format(
+                        Locale.ROOT,
+                        "#%06X",
+                        color.toArgb() and 0xFFFFFF
+                    )
+
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(34.dp)
-                            .background(color, RoundedCornerShape(7.dp))
-                            .border(1.dp, colors.outline.copy(alpha = 0.25f), RoundedCornerShape(7.dp))
-                    )
+                            .height(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(34.dp)
+                                .background(color, RoundedCornerShape(7.dp))
+                                .border(
+                                    1.dp,
+                                    colors.outline.copy(alpha = 0.25f),
+                                    RoundedCornerShape(7.dp)
+                                )
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .clickable(
+                                    onClickLabel = "Mostrar opção de copiar a cor"
+                                ) {
+                                    showColorMenu = true
+                                }
+                        )
+
+                        DropdownMenu(
+                            expanded = showColorMenu,
+                            onDismissRequest = { showColorMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Copiar $hex") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = PopupIcons.Clipboard,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    val clipboard = ctx.getSystemService(
+                                        Context.CLIPBOARD_SERVICE
+                                    ) as ClipboardManager
+
+                                    clipboard.setPrimaryClip(
+                                        ClipData.newPlainText("Cor hexadecimal", hex)
+                                    )
+
+                                    showColorMenu = false
+
+                                    if (Build.VERSION.SDK_INT < 33) {
+                                        Toast.makeText(
+                                            ctx,
+                                            "Cor $hex copiada",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
             }
             SwitchRow("Liquid Glass completo", "Ligado: vidro na barra e botões. Desligado: Material 3.", glassFull) { p.setGlassFull(it) }
         }
-        SectionCard("Editor") {
+        SectionCard("Editor", Modifier.cascadeIn(2)) {
             SwitchRow("Dock individual", "Cada wallpaper guarda a própria Dock", individual) { p.setIndividual(it) }
             Text("Qualidade da prévia (rápida economiza bateria)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Segmented(listOf("0.6" to "Rápida", "1.0" to "Normal", "1.6" to "Nítida"), quality.toString(), { p.setQuality(it.toFloat()) }, Modifier.fillMaxWidth())
         }
-        SectionCard("Troca automática") {
+        SectionCard("Troca automática", Modifier.cascadeIn(3)) {
             SwitchRow("Trocar sozinho", "Funciona com o app fechado · $queue imagem(ns) na fila", rotOn) {
                 p.setRotOn(it); if (it) RotationWorker.schedule(ctx, hours) else RotationWorker.cancel(ctx)
+            }
+            SwitchRow("Sem economia de bateria", "O Android costuma atrasar as trocas com o app fechado. Ligue para ele não limitar este app (gasta um pouco mais de bateria)", batteryFree) { want ->
+                try {
+                    // Ligar: diálogo "Permitir". Desligar: o Android só deixa isso na lista de apps (o app não consegue desfazer sozinho).
+                    batteryLauncher.launch(if (want) BatteryOptimization.requestIntent(ctx) else BatteryOptimization.listIntent())
+                    if (!want) Toast.makeText(ctx, "Na lista, procure o Dock Líquida e escolha \"Otimizar\".", Toast.LENGTH_LONG).show()
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(ctx, "Abra Ajustes do Android → Bateria e libere o Dock Líquida em segundo plano.", Toast.LENGTH_LONG).show()
+                }
             }
             Text("Intervalo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Segmented(listOf(6, 12, 24, 48).map { "$it" to "$it h" }, hours.toString(), { p.setRotHours(it.toInt()); if (rotOn) RotationWorker.schedule(ctx, it.toInt()) }, Modifier.fillMaxWidth())
@@ -159,22 +256,22 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
                         } finally { switching = false }
                     }
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().pressScale()
             ) { Text("Trocar agora") }
         }
-        SectionCard("Backup") {
+        SectionCard("Backup", Modifier.cascadeIn(4)) {
             Text(
                 "Salva num único arquivo .${Backup.EXT} as suas imagens, álbuns, ajustes de cada dock e preferências.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Button(onClick = { exportLauncher.launch(Backup.suggestedName()) }, Modifier.fillMaxWidth()) { Text("Exportar backup (.${Backup.EXT})") }
-            OutlinedButton(onClick = { askRestore = true }, Modifier.fillMaxWidth()) { Text("Restaurar backup") }
+            Button(onClick = { exportLauncher.launch(Backup.suggestedName()) }, Modifier.fillMaxWidth().pressScale()) { Text("Exportar backup (.${Backup.EXT})") }
+            OutlinedButton(onClick = { askRestore = true }, Modifier.fillMaxWidth().pressScale()) { Text("Restaurar backup") }
         }
-        SectionCard("Sobre") {
-            Text("Dock Líquida Versão ${BuildConfig.VERSION_NAME}")
+        SectionCard("Sobre", Modifier.cascadeIn(5)) {
+            Text("Dock Líquida Versão (${BuildConfig.VERSION_NAME})")
             Text("Desenvolvido por Jlian-dev", style = MaterialTheme.typography.bodyMedium)
             Text("Efeito de refração baseado no artigo “Liquid Glass in the Browser”, de kube.io.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = { p.resetAll(); RotationWorker.cancel(ctx) }, Modifier.fillMaxWidth()) { Text("Restaurar configurações padrão") }
+            OutlinedButton(onClick = { p.resetAll(); RotationWorker.cancel(ctx) }, Modifier.fillMaxWidth().pressScale()) { Text("Restaurar configurações padrão") }
         }
     }
 

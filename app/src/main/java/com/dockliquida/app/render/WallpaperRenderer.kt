@@ -78,8 +78,11 @@ object WallpaperRenderer {
         val p = if (factor == 1.0) params else params.scaled(factor)
         val scale = coverScale(info.width, info.height, W, H, p)      // com que escala o original será desenhado
         val src = ImageIo.decodeForScale(file, scale) ?: return null
-        val base = buildBase(src, info.width, info.height, W, H, p)
-        src.recycle()
+        val base = try {
+            buildBase(src, info.width, info.height, W, H, p)
+        } finally {
+            src.recycle()
+        }
         if (withDock) {
             val engine = GlassEngine()
             val region = engine.neededRegion(W, H, p)
@@ -96,11 +99,22 @@ object WallpaperRenderer {
  * quando algo que o afeta muda — exatamente a ideia de baseKey/glassKey do script.js.
  */
 class PreviewPipeline {
-    private val engine = GlassEngine()
+    private var engine = GlassEngine()
     private var baseKey = ""
     private var base: IntArray? = null
     private var glassKey = ""
     private var bg: GlassBackground? = null
+
+    /** Called by the single render worker after the editor closes. */
+    fun clear() {
+        base = null
+        bg = null
+        baseKey = ""
+        glassKey = ""
+        engine = GlassEngine()
+        lastW = 0
+        lastH = 0
+    }
 
     /** Largura/altura do quadro desenhado na última chamada (útil para converter toques em pixels de saída). */
     var lastW = 0; private set

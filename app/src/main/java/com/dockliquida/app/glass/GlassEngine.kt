@@ -81,6 +81,33 @@ object Refraction {
  * só refaz a leitura do fundo e a mistura de cores, o que é bem mais rápido.
  */
 class GlassEngine {
+    private data class ShadowKey(val w: Int, val h: Int, val r: Double)
+    private val shadowCache = java.util.LinkedHashMap<ShadowKey, IntArray>(2, 0.75f, true)
+
+    private fun shadowMask(w: Int, h: Int, r: Double, mw: Int, mh: Int, sigma: Double): IntArray {
+        val cacheKey = ShadowKey(w, h, r)
+        shadowCache[cacheKey]?.let { return it }
+        val mask = IntArray(mw * mh)
+        val hx = w / 2.0 - r; val hy = h / 2.0 - r
+        for (y in 0 until mh) for (x in 0 until mw) {
+            val dx = x + 0.5 - mw / 2.0; val dy = y + 0.5 - mh / 2.0
+            val qx = abs(dx) - hx; val qy = abs(dy) - hy
+            val dist = hypot(max(qx, 0.0), max(qy, 0.0)) + min(max(qx, qy), 0.0) - r
+            val cov = (0.5 - dist).coerceIn(0.0, 1.0)
+            mask[y * mw + x] = ((cov * 255 + 0.5).toInt()) shl 24
+        }
+        val blurred = Blur.gaussian(mask, mw, mh, sigma, clampEdges = false)
+        // Two entries retain draft and settled preview sizes; at most ~8 MiB in total.
+        if (blurred.size <= 1_048_576) {
+            while (shadowCache.size >= 2) {
+                val oldest = shadowCache.entries.iterator()
+                oldest.next(); oldest.remove()
+            }
+            shadowCache[cacheKey] = blurred
+        }
+        return blurred
+    }
+
     private var key = ""
     private var fw = 0
     private var fh = 0
@@ -162,16 +189,7 @@ class GlassEngine {
         val offY = jsRound(h * 0.08)                        // sombra levemente deslocada para baixo
         val m = ceil(3 * sigma).toInt() + 2                 // margem para o desfoque não cortar
         val mw = w + 2 * m; val mh = h + 2 * m
-        val mask = IntArray(mw * mh)
-        val hx = w / 2.0 - r; val hy = h / 2.0 - r
-        for (y in 0 until mh) for (x in 0 until mw) {
-            val dx = x + 0.5 - mw / 2.0; val dy = y + 0.5 - mh / 2.0
-            val qx = abs(dx) - hx; val qy = abs(dy) - hy
-            val dist = hypot(max(qx, 0.0), max(qy, 0.0)) + min(max(qx, qy), 0.0) - r   // distância assinada à borda
-            val cov = (0.5 - dist).coerceIn(0.0, 1.0)       // cobertura (suaviza a borda)
-            mask[y * mw + x] = ((cov * 255 + 0.5).toInt()) shl 24
-        }
-        val blurred = Blur.gaussian(mask, mw, mh, sigma, clampEdges = false)
+        val blurred = shadowMask(w, h, r, mw, mh, sigma)
         val ox = left - m; val oy = top - m + offY          // onde a máscara cai no quadro
         for (y in 0 until mh) {
             val cy = oy + y; if (cy < 0 || cy >= ch) continue

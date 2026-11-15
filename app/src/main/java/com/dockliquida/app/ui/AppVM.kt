@@ -26,8 +26,14 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
             val added = store.import(uris, kind, albumId) { w, h -> prefs.initialDock(w, h) }
-            if (added.size < uris.size) {
-                Toast.makeText(getApplication<Application>(), "Imagem já adicionada ou não pôde ser importada.", Toast.LENGTH_SHORT).show()
+            val skipped = uris.size - added.size
+            if (skipped > 0) {
+                // Diz QUANTAS entraram e quantas foram descartadas (repetidas nesta galeria ou arquivos inválidos).
+                Toast.makeText(
+                    getApplication<Application>(),
+                    "${added.size} importada(s). $skipped já estava(m) nesta galeria ou não pôde(ram) ser importada(s).",
+                    Toast.LENGTH_LONG
+                ).show()
             }
             onDone(added)
         }

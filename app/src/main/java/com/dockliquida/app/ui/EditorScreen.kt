@@ -93,6 +93,19 @@ import com.dockliquida.app.glass.GlassStyle
 import com.dockliquida.app.system.DockOverlay
 import com.dockliquida.app.system.WallTarget
 import kotlin.math.roundToInt
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
 
 
 /*
@@ -120,7 +133,7 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
     }
 
     LaunchedEffect(wallId) { vm.open(wallId) }
-    BackHandler { vm.close(); onClose() }
+    BackHandler { onClose() }                       // onClose anima a saída e só então fecha o editor (vm.close)
 
     // Resultado do alinhamento sobre a tela inicial (sobreposição)
     val overlayResult by DockOverlay.result.collectAsState()
@@ -133,7 +146,7 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
             chrome = {
                 // ---- topo: voltar e ampliar em vidro (desfocam a prévia quando ela passa por baixo) ----
                 Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", { vm.close(); onClose() })
+                    GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", { onClose() })
                     GlassIconButton(if (big) DockIcons.FullscreenExit else DockIcons.Fullscreen, if (big) "Mostrar painel" else "Ampliar prévia", { big = !big })
                 }
             }
@@ -148,7 +161,7 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
                             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 EditorSlidingTabs(tab, onSelect = { tab = it }, modifier = Modifier.weight(1f))
                                 Box(Modifier.padding(start = 10.dp)) {
-                                    FilledTonalIconButton(onClick = { menu = true }, Modifier.size(52.dp)) { Icon(Icons.Rounded.MoreVert, "Mais opções") }
+                                    FilledTonalIconButton(onClick = { menu = true }, Modifier.size(52.dp).pressScale()) { Icon(Icons.Rounded.MoreVert, "Mais opções") }
                                     DropdownMenu(
                                         expanded = menu,
                                         onDismissRequest = { menu = false },
@@ -185,9 +198,23 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
                                 }
                             }
                             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp).navigationBarsPadding()) {
-                                if (tab == "base") BasePanel(vm, onSwapPhoto = {
-                                    swapPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                }) else DockPanel(vm)
+                                // Troca de painel: o novo desliza para dentro e o antigo para fora, na direção da aba (e a altura se ajusta).
+                                AnimatedContent(
+                                    targetState = tab,
+                                    transitionSpec = {
+                                        val toDock = targetState == "dock"
+                                        (slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { w -> if (toDock) w / 6 else -w / 6 } + fadeIn(tween(220, delayMillis = 60)))
+                                            .togetherWith(slideOutHorizontally(tween(160)) { w -> if (toDock) -w / 6 else w / 6 } + fadeOut(tween(120)))
+                                    },
+                                    label = "editorPanel"
+                                ) { current ->
+                                    // Column: os painéis emitem vários blocos soltos; aqui eles precisam ficar empilhados.
+                                    Column {
+                                        if (current == "base") BasePanel(vm, onSwapPhoto = {
+                                            swapPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                        }) else DockPanel(vm)
+                                    }
+                                }
                             }
                         }
                     }
@@ -196,11 +223,14 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
         }
 
         // ---- "carregando" por cima de tudo (bloqueia toques) ----
-        vm.busy?.let { txt ->
+        val busyText = vm.busy
+        var lastBusy by remember { mutableStateOf("") }              // guarda o texto para ele não sumir antes do fade de saída
+        LaunchedEffect(busyText) { if (busyText != null) lastBusy = busyText }
+        AnimatedVisibility(visible = busyText != null, enter = fadeIn(tween(150)), exit = fadeOut(tween(200))) {
             Box(Modifier.fillMaxSize().background(Color(0x99000000)).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(color = Color.White)
-                    Text(txt, color = Color.White)
+                    Text(busyText ?: lastBusy, color = Color.White)
                 }
             }
         }
@@ -221,11 +251,15 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
                     modifier = Modifier.padding(bottom = 6.dp))
                 WallTarget.values().forEach { target ->
                     val active = targetSelected == target
+                    // Cores mudam suavemente ao escolher outra opção (as cores finais são as mesmas de antes).
+                    val rowColor by animateColorAsState(if (active) cs.primaryContainer else cs.surfaceContainer, tween(220), label = "targetBg")
+                    val iconColor by animateColorAsState(if (active) cs.onPrimaryContainer else cs.onSurfaceVariant, tween(220), label = "targetIcon")
+                    val labelColor by animateColorAsState(if (active) cs.onPrimaryContainer else cs.onSurface, tween(220), label = "targetText")
                     Surface(
                         onClick = { targetSelected = target },
                         shape = RoundedCornerShape(18.dp),
-                        color = if (active) cs.primaryContainer else cs.surfaceContainer,
-                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 58.dp)
+                        color = rowColor,
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 58.dp).pressScale(0.98f)
                     ) {
                         Row(
                             Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -239,18 +273,23 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
                                      WallTarget.BOTH -> DockIcons.Gallery
                                  },
                                  null, Modifier.size(18.dp),
-                                 tint = if (active) cs.onPrimaryContainer else cs.onSurfaceVariant
+                                 tint = iconColor
                              )
                             Text(target.label, Modifier.weight(1f),
-                                color = if (active) cs.onPrimaryContainer else cs.onSurface)
-                            if (active) Icon(PopupIcons.Check, "Selecionado", Modifier.size(18.dp),
-                                tint = cs.onPrimaryContainer)
+                                color = labelColor)
+                            AnimatedVisibility(
+                                visible = active,
+                                enter = scaleIn(spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium)) + fadeIn(tween(120)),
+                                exit = scaleOut(tween(120)) + fadeOut(tween(120))
+                            ) {
+                                Icon(PopupIcons.Check, "Selecionado", Modifier.size(18.dp), tint = cs.onPrimaryContainer)
+                            }
                         }
                     }
                 }
                 Button(
                     onClick = { val chosen = targetSelected; askTarget = false; vm.applyWallpaper(chosen) },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp).pressScale(),
                     shape = RoundedCornerShape(32.dp)
                 ) { Text("Aplicar") }
                 TextButton(
@@ -268,6 +307,10 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
  */
 @Composable
 private fun PreviewArea(vm: EditorVM, modifier: Modifier) {
+    // Primeira vez que a prévia fica pronta: aparece com fade e crescendo de 96% a 100% (as próximas só atualizam a imagem).
+    val appear = remember { Animatable(0f) }
+    val hasPreview = vm.preview != null
+    LaunchedEffect(hasPreview) { if (hasPreview && appear.value < 1f) appear.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) }
     Column(modifier.fillMaxWidth()) {
         Box(Modifier.weight(1f).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 62.dp, bottom = 2.dp)) {
             Box(
@@ -303,7 +346,9 @@ private fun PreviewArea(vm: EditorVM, modifier: Modifier) {
                     val shape = RoundedCornerShape(24.dp)
                     Image(
                         bmp.asImageBitmap(), "Prévia",
-                        Modifier.size(with(d) { (vm.outW * g.scale).toDp() }, with(d) { (vm.outH * g.scale).toDp() }).clip(shape),
+                        Modifier.size(with(d) { (vm.outW * g.scale).toDp() }, with(d) { (vm.outH * g.scale).toDp() })
+                            .graphicsLayer { alpha = appear.value; val sc = 0.96f + 0.04f * appear.value; scaleX = sc; scaleY = sc }
+                            .clip(shape),
                         contentScale = ContentScale.FillBounds
                     )
                 } else CircularProgressIndicator()
@@ -413,7 +458,8 @@ private fun BasePanel(vm: EditorVM, onSwapPhoto: () -> Unit) {
         onClick = onSwapPhoto,
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp),
+            .height(44.dp)
+            .pressScale(),
         shape = RoundedCornerShape(24.dp)
     ) {
         Icon(
@@ -451,7 +497,7 @@ private fun BasePanel(vm: EditorVM, onSwapPhoto: () -> Unit) {
         LabeledSlider("Zoom (corta mais)", p.zoom.toFloat(), 100f..400f, "${p.zoom}%") { v -> vm.update { it.copy(zoom = v.roundToInt()) } }
         LabeledSlider("Mover na horizontal", p.panX.toFloat(), -100f..100f, "${p.panX}") { v -> vm.update { it.copy(panX = v.roundToInt()) } }
         LabeledSlider("Mover na vertical", p.panY.toFloat(), -100f..100f, "${p.panY}") { v -> vm.update { it.copy(panY = v.roundToInt()) } }
-        FilledTonalButton(onClick = { vm.resetFraming() }, modifier = Modifier.fillMaxWidth()) { Text("Restaurar enquadramento") }
+        FilledTonalButton(onClick = { vm.resetFraming() }, modifier = Modifier.fillMaxWidth().pressScale()) { Text("Restaurar enquadramento") }
     }
 }
 
@@ -461,7 +507,7 @@ private fun DockPanel(vm: EditorVM) {
     val p = vm.params
     SectionCard("Posição da dock (precisão de 1 px)") {
         Button(
-            onClick = { vm.startOverlay() }, Modifier.fillMaxWidth().height(56.dp),
+            onClick = { vm.startOverlay() }, Modifier.fillMaxWidth().height(56.dp).pressScale(),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
         ) { Text("Alinhar sobre a tela inicial", style = MaterialTheme.typography.titleSmall) }
         Stepper("Posição Y", p.y) { v -> vm.update { it.copy(y = v) } }
@@ -482,7 +528,7 @@ private fun DockPanel(vm: EditorVM) {
         LabeledSlider("Aberração cromática", p.chroma.toFloat(), 0f..30f, "${p.chroma}%") { v -> vm.update { it.copy(chroma = v.roundToInt()) } }
         LabeledSlider("Brilho especular", p.shine.toFloat(), 0f..100f, "${p.shine}") { v -> vm.update { it.copy(shine = v.roundToInt()) } }
         LabeledSlider("Ângulo da luz", p.angle.toFloat(), -180f..180f, "${p.angle}°") { v -> vm.update { it.copy(angle = v.roundToInt()) } }
-        FilledTonalButton(onClick = { vm.resetDock() }, modifier = Modifier.fillMaxWidth()) { Text("Repor valores padrão") }
+        FilledTonalButton(onClick = { vm.resetDock() }, modifier = Modifier.fillMaxWidth().pressScale()) { Text("Repor valores padrão") }
     }
 }
 
@@ -531,7 +577,7 @@ private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit) {
 
 @Composable
 private fun StepBtn(text: String, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, Modifier.size(width = 56.dp, height = 48.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(0.dp)) {
+    OutlinedButton(onClick = onClick, Modifier.size(width = 56.dp, height = 48.dp).pressScale(0.92f), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(0.dp)) {
         Text(text, fontSize = 15.sp, maxLines = 1)
     }
 }
