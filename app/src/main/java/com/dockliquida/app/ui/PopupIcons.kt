@@ -13,6 +13,7 @@ object PopupIcons {
             .addPath(PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.Black))
             .build()
 
+    val Clipboard by lazy { icon("Clipboard", "M19,3h-4.18C14.4,1.84 13.3,1 12,1s-2.4,0.84 -2.82,2H5c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2V5c0,-1.1 -0.9,-2 -2,-2zM12,3a1,1 0,1 1,0 2a1,1 0,0 1,0 -2zM19,21H5V5h2v3h10V5h2v16z")}
     val Download by lazy { icon("Download", "M5,20h14v-2H5v2zM11,3v9.17l-3.59,-3.58L6,10l6,6 6,-6 -1.41,-1.41L13,12.17V3h-2z") }
     val Phone by lazy { icon("Phone", "M17,1H7C5.9,1 5,1.9 5,3v18c0,1.1 0.9,2 2,2h10c1.1,0 2,-0.9 2,-2V3c0,-1.1 -0.9,-2 -2,-2zM17,19H7V5h10v14zM12,22c-0.55,0 -1,-0.45 -1,-1s0.45,-1 1,-1 1,0.45 1,1 -0.45,1 -1,1z") }
     val Edit by lazy { icon("Edit", "M3,17.25V21h3.75l11.06,-11.06 -3.75,-3.75L3,17.25zM20.71,7.04c0.39,-0.39 0.39,-1.02 0,-1.41l-2.34,-2.34c-0.39,-0.39 -1.02,-0.39 -1.41,0l-1.83,1.83 3.75,3.75 1.83,-1.83z") }

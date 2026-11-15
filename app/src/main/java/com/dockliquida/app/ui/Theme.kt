@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import androidx.compose.material3.ColorScheme
+import androidx.compose.ui.graphics.lerp
 
 /*
  * Theme.kt — cores (Material You), formas arredondadas e tipografia mais "editorial".
@@ -64,15 +66,37 @@ private val DockDarkColors = darkColorScheme(
     outline = Color(0xFF858585)
 )
 
+/**
+ * Modo AMOLED: deixa o fundo em preto PURO (#000000) e escurece as superfícies (cartões, trilhos, barras) misturando-as
+ * com preto. Em telas OLED o pixel preto fica desligado (economiza bateria) e o contraste com cartões e botões continua
+ * legível. A mistura (em vez de cinzas fixos) mantém o tom das cores do Material You. Só vale para o tema escuro.
+ */
+internal fun ColorScheme.toAmoled(): ColorScheme {
+    fun deeper(c: Color, amount: Float) = lerp(c, Color.Black, amount)   // amount: 0 = cor original, 1 = preto
+    return copy(
+        background = Color.Black,
+        surface = Color.Black,
+        surfaceDim = Color.Black,
+        surfaceContainerLowest = Color.Black,
+        surfaceContainerLow = deeper(surfaceContainerLow, 0.65f),
+        surfaceContainer = deeper(surfaceContainer, 0.60f),
+        surfaceContainerHigh = deeper(surfaceContainerHigh, 0.50f),
+        surfaceContainerHighest = deeper(surfaceContainerHighest, 0.40f),
+        surfaceBright = deeper(surfaceBright, 0.40f),
+        surfaceVariant = deeper(surfaceVariant, 0.50f)
+    )
+}
+
 @Composable
-fun DockTheme(mode: String, dynamicColors: Boolean = true, content: @Composable () -> Unit) {
+fun DockTheme(mode: String, dynamicColors: Boolean = true, amoled: Boolean = false, content: @Composable () -> Unit) {
     val dark = when (mode) { "claro" -> false; "escuro" -> true; else -> isSystemInDarkTheme() }
     val ctx = LocalContext.current
-    val scheme = when {
+    val baseScheme = when {
         dynamicColors && Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         dark -> DockDarkColors
         else -> DockLightColors
     }
+    val scheme = if (dark && amoled) baseScheme.toAmoled() else baseScheme
     val view = LocalView.current
     SideEffect {                                              // ícones da barra de status/navegação conforme o tema escolhido
         val window = (view.context as? Activity)?.window ?: return@SideEffect

@@ -27,6 +27,7 @@ import com.dockliquida.app.system.Actions
 import com.dockliquida.app.system.DockOverlay
 import com.dockliquida.app.system.OverlayResult
 import com.dockliquida.app.system.WallTarget
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -68,14 +69,47 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
     private var boxW = 0f; private var boxH = 0f                      // tamanho da área da prévia na tela (px)
 
     // ---- renderização em segundo plano: só o pedido MAIS RECENTE importa (CONFLATED) ----
-    private class Req(val img: LoadedImage, val outW: Int, val outH: Int, val p: GlassParams, val factor: Double)
-    private val requests = Channel<Req>(Channel.CONFLATED)
+    private class Req(val img: LoadedImage, val outW: Int, val outH: Int, val p: GlassParams, val factor: Double, val version: Long)
+    @Volatile private var renderVersion = 0L
+    private var imageLoadVersion = 0L
+    private val requests = Channel<Req?>(Channel.CONFLATED)
 
     init {
         viewModelScope.launch(Dispatchers.Default) {
             for (r in requests) {
-                val bmp = pipeline.render(r.img, r.outW, r.outH, r.p, r.factor)
-                withContext(Dispatchers.Main) { preview = bmp }
+                if (r == null) {
+                    pipeline.clear()
+                    continue
+                }
+                if (r.version != renderVersion) continue
+                val bmp = try {
+                    pipeline.render(r.img, r.outW, r.outH, r.p, r.factor)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: OutOfMemoryError) {
+                    pipeline.clear()
+                    withContext(Dispatchers.Main) {
+                        if (r.version == renderVersion) message = "Memória insuficiente para gerar a prévia."
+                    }
+                    continue
+                } catch (e: Exception) {
+                    pipeline.clear()
+                    withContext(Dispatchers.Main) {
+                        if (r.version == renderVersion) message = "Não foi possível gerar a prévia."
+                    }
+                    continue
+                }
+                var published = false
+                try {
+                    withContext(Dispatchers.Main) {
+                        if (r.version == renderVersion && image === r.img && wallRef != null) {
+                            preview = bmp
+                            published = true
+                        }
+                    }
+                } finally {
+                    if (!published) bmp.recycle()
+                }
             }
         }
     }
@@ -84,10 +118,13 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
     fun open(id: String) {
         if (wall?.id == id) { requestRender(); return }               // já está aberto (ex.: voltou do overlay)
         val w = store.wall(id) ?: return
+        renderVersion++
         wall = w; wallRef = w; preview = null; image = null; style = null
         params = prefs.dockFor(w); outMode = w.outMode; outW = w.outW; outH = w.outH
+        val loadVersion = ++imageLoadVersion
         viewModelScope.launch {
             val bmp = withContext(Dispatchers.IO) { ImageIo.decodeMaxSide(store.file(id), 2560) }   // 2560 px: sobra para a prévia
+            if (loadVersion != imageLoadVersion) { bmp?.recycle(); return@launch }
             if (bmp == null) { message = "Não foi possível abrir a imagem."; return@launch }
             image = LoadedImage(bmp, w.origW, w.origH, ++imageCounter)
             requestRender()
@@ -96,6 +133,10 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
 
     /** Grava tudo e marca este wallpaper como o "último aberto" (usado na Home). */
     fun close() {
+        settleJob?.cancel()
+        imageLoadVersion++
+        renderVersion++
+        requests.trySend(null)
         saveJob?.cancel()
         saveNow()
         wall?.let { prefs.setLastWall(it.id) }
@@ -143,7 +184,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
             settleJob?.cancel()
             settleJob = viewModelScope.launch { delay(220); requestRender(false) }
         }
-        requests.trySend(Req(img, outW, outH, params, f))
+        requests.trySend(Req(img, outW, outH, params, f, renderVersion))
     }
 
     /** Geometria da imagem dentro da caixa (para converter toques em pixels de saída): escala, deslocamento X e Y. */
@@ -226,6 +267,9 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
      */
     fun replaceImage(uri: Uri) {
         val w = wallRef ?: return
+        val loadVersion = ++imageLoadVersion
+        settleJob?.cancel()
+        renderVersion++
         saveJob?.cancel()
         viewModelScope.launch {
             busy = "Trocando a foto…"
@@ -237,6 +281,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
                 if (outMode == OutMode.AUTO) setOutMode(OutMode.AUTO)          // "igual à imagem": recalcula o tamanho (e reescala a dock)
                 val bmp = withContext(Dispatchers.IO) { ImageIo.decodeMaxSide(store.file(w.id), 2560) }
                     ?: throw IllegalStateException("Não foi possível abrir a nova imagem.")
+                if (loadVersion != imageLoadVersion) { bmp.recycle(); return@launch }
                 image = LoadedImage(bmp, size.first, size.second, ++imageCounter)
                 saveNow()
                 requestRender()
@@ -326,14 +371,19 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             busy = "Gerando imagem…"
             try {
-                val bmp = withContext(Dispatchers.Default) {
-                    WallpaperRenderer.renderFull(store.file(w.id), outW, outH, params, if (hires) hiresFactor() else 1.0)
-                } ?: throw IllegalStateException("Não foi possível gerar a imagem.")
+                val exportW = outW
+                val exportH = outH
+                val exportParams = params
+                val factor = if (hires) hiresFactor() else 1.0
                 val base = w.name.substringBeforeLast('.').take(40)
                 val name = "DockLiquida_${base}_${System.currentTimeMillis() / 1000}.png"
-                withContext(Dispatchers.IO) { Actions.saveToGallery(ctx, bmp, name) }
-                bmp.recycle()
-                message = "Salvo em Imagens › Dock Líquida (${(outW * (if (hires) hiresFactor() else 1.0)).roundToInt()} px de largura)"
+                withContext(Dispatchers.IO) {
+                    val bmp = WallpaperRenderer.renderFull(store.file(w.id), exportW, exportH, exportParams, factor)
+                        ?: throw IllegalStateException("Não foi possível gerar a imagem.")
+                    try { Actions.saveToGallery(ctx, bmp, name) } finally { bmp.recycle() }
+                }
+                message = "Salvo em Imagens › Dock Líquida (${(exportW * factor).roundToInt()} px de largura)"
+            } catch (e: CancellationException) { throw e
             } catch (e: Throwable) { message = "Falha ao salvar: ${e.message}" } finally { busy = null }
         }
     }

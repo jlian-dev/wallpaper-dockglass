@@ -39,6 +39,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dockliquida.app.data.Kind
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 
 /**
  * Raiz do app: tema Material 3 + abas + editor em tela cheia.
@@ -47,10 +50,10 @@ import com.dockliquida.app.data.Kind
 @Composable
 fun AppRoot() {
     val app: AppVM = viewModel()
-    val editor: EditorVM = viewModel()
     val theme by app.prefs.theme.collectAsState()
     val glassFull by app.prefs.glassFull.collectAsState()
     val dynamicColors by app.prefs.dynamicColors.collectAsState()
+    val amoled by app.prefs.amoled.collectAsState()
     // Historico real de abas: voltar remove a ultima, sem alternar em circulo.
     var tabHistory by rememberSaveable { mutableStateOf(listOf("home")) }
     val tab = tabHistory.last()
@@ -61,13 +64,16 @@ fun AppRoot() {
     val context = LocalContext.current
     var lastExitBack by remember { mutableLongStateOf(0L) }
 
-    DockTheme(theme, dynamicColors = dynamicColors) {
+    DockTheme(theme, dynamicColors = dynamicColors, amoled = amoled) {
         CompositionLocalProvider(LocalGlassFull provides glassFull) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
                 AppLaunchScreen {
                     val id = editing
                     if (id != null) {
-                        EditorScreen(editor, id) { editing = null }
+                        val editor: EditorVM = viewModel()
+                        EditorTransition(onClosed = { editor.close(); editing = null }) { requestClose ->
+                            EditorScreen(editor, id, requestClose)
+                        }
                     } else {
                         // Gestos do album e da selecao sao tratados dentro de GalleryScreen.
                         // Na raiz, um gesto volta a aba anterior; dois gestos proximos saem do app.
@@ -111,21 +117,32 @@ fun AppRoot() {
                             val screenOpacity = remember { Animatable(1f) }
                             val screenOffset = remember { Animatable(0f) }
 
+                            val tabOrder = listOf("home", "gallery", "auto", "settings")
                             LaunchedEffect(tab) {
                                 if (visibleTab != tab) {
-                                    screenOpacity.animateTo(0f, animationSpec = tween(95))
+                                    // +1: a aba nova fica à direita da atual (a tela entra pela direita); -1: entra pela esquerda.
+                                    val dir = if (tabOrder.indexOf(tab) >= tabOrder.indexOf(visibleTab)) 1f else -1f
+                                    coroutineScope {                                      // saída: some e escorrega um pouco para o lado oposto
+                                        launch { screenOpacity.animateTo(0f, animationSpec = tween(95)) }
+                                        launch { screenOffset.animateTo(-16f * dir, animationSpec = tween(95, easing = FastOutLinearInEasing)) }
+                                    }
                                     visibleTab = tab
-                                    screenOffset.snapTo(12f)
+                                    screenOffset.snapTo(24f * dir)
+                                    coroutineScope {                                      // entrada: aparece e assenta no lugar com mola
+                                        launch { screenOpacity.animateTo(1f, animationSpec = tween(220)) }
+                                        launch { screenOffset.animateTo(0f, animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMedium)) }
+                                    }
+                                } else if (screenOpacity.value != 1f || screenOffset.value != 0f) {
                                     coroutineScope {
-                                        launch { screenOpacity.animateTo(1f, animationSpec = tween(210)) }
-                                        launch { screenOffset.animateTo(0f, animationSpec = tween(210)) }
+                                        launch { screenOpacity.animateTo(1f, tween(220)) }
+                                        launch { screenOffset.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMedium)) }
                                     }
                                 }
                             }
                             Box(
                                 Modifier.fillMaxSize().graphicsLayer {
                                     alpha = screenOpacity.value
-                                    translationY = screenOffset.value * density
+                                    translationX = screenOffset.value * density
                                 }
                             ) {
                                 when (visibleTab) {

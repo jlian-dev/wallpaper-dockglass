@@ -96,8 +96,13 @@ class RotationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
                 // A primeira troca automática acontece depois de UM intervalo. Sem isso, ligar o interruptor (ou
                 // abrir o app após restaurar dados) trocava o wallpaper na hora; para isso existe "Trocar agora".
                 .setInitialDelay(period, TimeUnit.HOURS)
-                // Renderizar em alta resolução gasta bastante: com bateria baixa o Android adia para depois.
-                .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+                // Renderizar em alta resolução gasta bastante: com bateria baixa o Android adia para depois. Se o usuário
+                // liberou o app da economia de bateria (Ajustes → Troca automática), essa espera também é dispensada.
+                .setConstraints(
+                    Constraints.Builder().apply {
+                        if (!BatteryOptimization.isIgnoring(ctx)) setRequiresBatteryNotLow(true)
+                    }.build()
+                )
                 // Se falhar, espera 15 min (linear) entre as tentativas, em vez do padrão de 30 s que martelava o sistema.
                 .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.MINUTES)
                 .build()

@@ -159,9 +159,11 @@ class Store private constructor(private val app: Context) {
             val (deviceW, deviceH) = Actions.deviceSize(app)
             val outputW = deviceW.coerceIn(64, 8192)
             val outputH = deviceH.coerceIn(64, 8192)
-            // A comparação é global: inclui imagens em álbuns e nas duas galerias.
+            // A comparação vale só para as fotos DA MESMA GALERIA (fixa ou automática), inclusive as que estão em álbuns dela.
+            // As duas galerias são independentes: a troca automática só usa a automática. Antes a comparação era global, então
+            // uma foto que já estava na galeria fixa era descartada ao importar para a automática e a fila ficava quase vazia.
             // Calcula uma vez por lote; imagens inválidas/ausentes são ignoradas.
-            val knownHashes = _walls.value.mapNotNull { existing ->
+            val knownHashes = _walls.value.filter { it.kind == kind }.mapNotNull { existing ->
                 val existingFile = file(existing.id)
                 if (existingFile.isFile) runCatching { sha256(existingFile) }.getOrNull() else null
             }.toHashSet()
@@ -176,7 +178,7 @@ class Store private constructor(private val app: Context) {
 
                     val hash = sha256(f)
                     if (hash in knownHashes) {
-                        f.delete() // foto já salva: não gera outra cópia nem altera seu álbum/dock
+                        f.delete() // foto já salva NESTA galeria: não gera outra cópia nem altera seu álbum/dock
                         continue
                     }
 

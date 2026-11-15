@@ -24,6 +24,7 @@ class Prefs private constructor(ctx: Context) {
     private val _individual = flow(sp.getBoolean("dockIndividual", true))     // cada wallpaper guarda a própria dock
     private val _glassFull = flow(sp.getBoolean("glassFull", false))
     private val _dynamicColors = flow(sp.getBoolean("dynamicColors", true))   // true = Material You; false = cinzas neutros          // barra inferior com vidro mais transparente
+    private val _amoled = flow(sp.getBoolean("amoled", false))                // true = fundo preto puro no tema escuro (telas OLED)
     private val _rotOn = flow(sp.getBoolean("trocaAtiva", false))
     private val _rotHours = flow(sp.getInt("trocaHoras", 24))
     private val _rotTarget = flow(sp.getString("trocaAlvo", "home")!!)         // home | lock | both
@@ -34,6 +35,7 @@ class Prefs private constructor(ctx: Context) {
     val individual: StateFlow<Boolean> = _individual.asStateFlow()
     val glassFull: StateFlow<Boolean> = _glassFull.asStateFlow()
     val dynamicColors: StateFlow<Boolean> = _dynamicColors.asStateFlow()
+    val amoled: StateFlow<Boolean> = _amoled.asStateFlow()
     val rotOn: StateFlow<Boolean> = _rotOn.asStateFlow()
     val rotHours: StateFlow<Int> = _rotHours.asStateFlow()
     val rotTarget: StateFlow<String> = _rotTarget.asStateFlow()
@@ -44,6 +46,7 @@ class Prefs private constructor(ctx: Context) {
     fun setIndividual(v: Boolean) { _individual.value = v; sp.edit().putBoolean("dockIndividual", v).apply() }
     fun setGlassFull(v: Boolean) { _glassFull.value = v; sp.edit().putBoolean("glassFull", v).apply() }
     fun setDynamicColors(v: Boolean) { _dynamicColors.value = v; sp.edit().putBoolean("dynamicColors", v).apply() }
+    fun setAmoled(v: Boolean) { _amoled.value = v; sp.edit().putBoolean("amoled", v).apply() }
     fun setRotOn(v: Boolean) { _rotOn.value = v; sp.edit().putBoolean("trocaAtiva", v).apply() }
     fun setRotHours(v: Int) { _rotHours.value = v; sp.edit().putInt("trocaHoras", v).apply() }
     fun setRotTarget(v: String) { _rotTarget.value = v; sp.edit().putString("trocaAlvo", v).apply() }
@@ -122,7 +125,7 @@ class Prefs private constructor(ctx: Context) {
     fun reload() {
         _theme.value = sp.getString("tema", "auto")!!; _quality.value = sp.getFloat("qualidade", 1f)
         _individual.value = sp.getBoolean("dockIndividual", true); _glassFull.value = sp.getBoolean("glassFull", false)
-        _dynamicColors.value = sp.getBoolean("dynamicColors", true)
+        _dynamicColors.value = sp.getBoolean("dynamicColors", true); _amoled.value = sp.getBoolean("amoled", false)
         _rotOn.value = sp.getBoolean("trocaAtiva", false); _rotHours.value = sp.getInt("trocaHoras", 24)
         _rotTarget.value = sp.getString("trocaAlvo", "home")!!; _lastWall.value = sp.getString("lastWall", null)
     }
@@ -130,7 +133,7 @@ class Prefs private constructor(ctx: Context) {
     fun resetAll() {
         sp.edit().clear().apply()
         _theme.value = "auto"; _quality.value = 1f; _individual.value = true; _glassFull.value = false
-        _dynamicColors.value = true
+        _dynamicColors.value = true; _amoled.value = false
         _rotOn.value = false; _rotHours.value = 24; _rotTarget.value = "home"; _lastWall.value = null
     }
 

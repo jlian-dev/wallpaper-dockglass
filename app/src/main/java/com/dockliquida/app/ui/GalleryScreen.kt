@@ -59,6 +59,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -66,7 +69,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -77,6 +79,20 @@ import com.dockliquida.app.data.Album
 import com.dockliquida.app.data.Kind
 import com.dockliquida.app.data.Store
 import com.dockliquida.app.data.Wall
+import android.os.SystemClock
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.runtime.LaunchedEffect
 
 /*
  * GalleryScreen.kt — galeria fixa e galeria automática (mesma tela, `kind` diferente), no layout da versão anterior:
@@ -91,41 +107,62 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
     val cs = MaterialTheme.colorScheme
     val allWalls by vm.store.walls.collectAsState()
     val allAlbums by vm.store.albums.collectAsState()
-    val albums = allAlbums.filter { it.kind == kind }
+    val albums = remember(allAlbums, kind) { allAlbums.filter { it.kind == kind } }
+    val kindWalls = remember(allWalls, kind) {
+        allWalls.filter { it.kind == kind }.sortedByDescending { it.addedAt }
+    }
+    val wallsByAlbum = remember(kindWalls) { kindWalls.groupBy { it.albumId } }
     var albumId by remember { mutableStateOf<String?>(null) }            // null = tela raiz (lista de álbuns)
     var selected by remember { mutableStateOf(setOf<String>()) }          // seleção por toque longo
     var toDelete by remember { mutableStateOf(setOf<String>()) }          // imagens aguardando confirmação de exclusão
     var dialog by remember { mutableStateOf("") }                         // novo | renomear | mover | apagarAlbum | ""
     var pick by remember { mutableStateOf("") }                           // "" | app | fixed (seletor de imagens do app)
+    var applyingId by remember { mutableStateOf<String?>(null) }
     var text by remember { mutableStateOf("") }
 
     val album = albums.firstOrNull { it.id == albumId }
-    val shown = allWalls.filter { it.kind == kind && (if (album == null) it.albumId == null else it.albumId == album.id) }.sortedByDescending { it.addedAt }
+    val shown = wallsByAlbum[album?.id].orEmpty()
     val phonePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris -> vm.importUris(uris, kind, albumId) }
     fun addFromPhone() = phonePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
 
     BackHandler(enabled = selected.isNotEmpty() || album != null) { if (selected.isNotEmpty()) selected = emptySet() else albumId = null }
 
+    val introClock = remember(kind, albumId) { SystemClock.uptimeMillis() }
+    var lastCount by remember { mutableStateOf(0) }
+    LaunchedEffect(selected.size) { if (selected.isNotEmpty()) lastCount = selected.size }
+
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val density = LocalDensity.current
+    var headerHeightPx by remember { mutableIntStateOf(0) }
+    val headerHeight = if (headerHeightPx > 0) with(density) { headerHeightPx.toDp() } else topInset + 92.dp
 
     GlassScope(
         Modifier.fillMaxSize(),
         chrome = {
             // ---- topo: voltar + título + ação (ou barra de seleção), tudo em vidro, sobre um degradê do fundo ----
             val bg = cs.background
-            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(bg.copy(alpha = 0.96f), bg.copy(alpha = 0f))))) {
-                if (selected.isEmpty()) {
-                    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", { if (album != null) albumId = null else onBack() })
-                        Text(if (kind == Kind.FIXED) "Galeria" else "Galeria automática", Modifier.weight(1f).padding(horizontal = 16.dp), style = MaterialTheme.typography.headlineSmall, maxLines = 1)
-                        GlassAction("Adicionar", { addFromPhone() }, icon = Icons.Rounded.Add)
-                    }
-                } else {
-                    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        GlassIconButton(Icons.Rounded.Close, "Cancelar seleção", { selected = emptySet() })
-                        Text("${selected.size} selecionada(s)", Modifier.weight(1f).padding(horizontal = 16.dp), style = MaterialTheme.typography.titleMedium)
-                        GlassAction("Mover", { dialog = "mover" })
-                        GlassAction("Excluir", { toDelete = selected }, Modifier.padding(start = 8.dp))
+            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().onSizeChanged { headerHeightPx = it.height }.background(Brush.verticalGradient(listOf(bg.copy(alpha = 0.96f), bg.copy(alpha = 0f))))) {
+                Crossfade(targetState = selected.isEmpty(), animationSpec = tween(180), label = "galleryTopBar") { normal ->
+                    if (normal) {
+                        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", { if (album != null) albumId = null else onBack() })
+                            Text(if (kind == Kind.FIXED) "Galeria" else "Galeria automática", Modifier.weight(1f).padding(horizontal = 16.dp), style = MaterialTheme.typography.headlineSmall, maxLines = 1)
+                            GlassAction("Adicionar", { addFromPhone() }, icon = Icons.Rounded.Add)
+                        }
+                    } else {
+                        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                GlassIconButton(Icons.Rounded.Close, "Cancelar seleção", { selected = emptySet() })
+                                Text("${if (selected.isNotEmpty()) selected.size else lastCount} selecionada(s)", Modifier.weight(1f).padding(start = 16.dp), style = MaterialTheme.typography.titleMedium)
+                                if (selected.size == 1) {
+                                    GlassAction("Aplicar", { applyingId = selected.single() }, icon = Icons.Rounded.Check)
+                                }
+                            }
+                            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                GlassAction("Mover", { dialog = "mover" })
+                                GlassAction("Excluir", { toDelete = selected })
+                            }
+                        }
                     }
                 }
             }
@@ -133,13 +170,14 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
     ) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(6), modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = topInset + 92.dp, bottom = bottomPad + 12.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = headerHeight + 8.dp, bottom = bottomPad + 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // ---- (automática) importar da galeria fixa + slideshow ----
             if (kind == Kind.ROTATION) item(span = { GridItemSpan(maxLineSpan) }) {
-                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = cs.surfaceContainerHigh)) {
-                    Row(Modifier.fillMaxWidth().clickable { pick = "fixed" }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Card(Modifier.animateItem().cascadeIn(0, introClock).fillMaxWidth(), shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = cs.surfaceContainerHigh)) {
+                    // pressScale só na linha clicável (não no cartão todo, que também tem os interruptores do slideshow)
+                    Row(Modifier.fillMaxWidth().pressScale(0.98f).clickable { pick = "fixed" }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
                             Icon(DockIcons.Gallery, null, tint = cs.onPrimaryContainer)
                         }
@@ -155,7 +193,7 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
                         for (a in albums) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerHighest).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Switch(a.slide, { on -> if (!vm.store.setSlide(a.id, on)) Toast.makeText(ctx, "Máximo de 2 álbuns no slideshow.", Toast.LENGTH_SHORT).show() })
                             Text(a.name, Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 1)
-                            Text("${allWalls.count { it.albumId == a.id }} imagens", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+                            Text("${wallsByAlbum[a.id].orEmpty().size} imagens", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                         }
                         Text(if (albums.any { it.slide }) "Somente os álbuns marcados" else "Todos os wallpapers", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                     }
@@ -167,17 +205,18 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Meus álbuns", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                        FilledTonalButton(onClick = { text = ""; dialog = "novo" }) { Icon(Icons.Rounded.Add, null, Modifier.size(20.dp)); Text("  Novo álbum") }
+                        FilledTonalButton(onClick = { text = ""; dialog = "novo" }, modifier = Modifier.pressScale()) { Icon(Icons.Rounded.Add, null, Modifier.size(20.dp)); Text("  Novo álbum") }
                     }
                 }
                 if (albums.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text("Nenhum álbum ainda.", color = cs.onSurfaceVariant) }
-                items(albums, key = { it.id }, span = { GridItemSpan(3) }) { a ->
-                    val cover = allWalls.filter { it.albumId == a.id }.minByOrNull { it.addedAt }
-                    val n = allWalls.count { it.albumId == a.id }
-                    Card(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).clickable { albumId = a.id }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = cs.surfaceContainerHigh)) {
+                itemsIndexed(albums, key = { _, a -> a.id }, contentType = { _, _ -> "album" }, span = { _, _ -> GridItemSpan(3) }) { albumIndex, a ->
+                    val albumWalls = wallsByAlbum[a.id].orEmpty()
+                    val cover = remember(albumWalls) { albumWalls.minByOrNull { it.addedAt } }
+                    val n = albumWalls.size
+                    Card(Modifier.animateItem().cascadeIn(albumIndex + 1, introClock).fillMaxWidth().pressScale(0.97f).clip(RoundedCornerShape(24.dp)).clickable { albumId = a.id }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = cs.surfaceContainerHigh)) {
                         Column(Modifier.padding(12.dp)) {
                             Box(Modifier.fillMaxWidth().aspectRatio(1.4f).clip(RoundedCornerShape(16.dp)).background(cs.surfaceVariant)) {
-                                if (cover != null) Thumb(vm.store.thumb(cover.id), Modifier.fillMaxSize())
+                                if (cover != null) Thumb(vm.store.thumb(cover.id), Modifier.fillMaxSize(), revision = cover.rev)
                             }
                             Text(a.name, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1)
                             Text("$n imagens", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
@@ -194,7 +233,7 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
                             Text("${shown.size} imagens", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                         }
                         Box {
-                            FilledTonalIconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Opções do álbum") }
+                            FilledTonalIconButton(onClick = { menu = true }, modifier = Modifier.pressScale()) { Icon(Icons.Rounded.MoreVert, "Opções do álbum") }
                             DropdownMenu(
                                 expanded = menu,
                                 onDismissRequest = { menu = false },
@@ -232,27 +271,42 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
             if (shown.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                 Text("Nada por aqui ainda. Toque em Adicionar para trazer imagens do aparelho.", color = cs.onSurfaceVariant)
             }
-            items(shown, key = { it.id }, span = { GridItemSpan(2) }) { w ->
+            itemsIndexed(shown, key = { _, w -> w.id }, contentType = { _, _ -> "wallpaper" }, span = { _, _ -> GridItemSpan(2) }) { index, w ->
                 val on = w.id in selected
                 val shape = RoundedCornerShape(20.dp)
+                val borderColor by animateColorAsState(if (on) cs.primary else cs.outlineVariant, tween(180), label = "tileBorderColor")
+                val borderWidth by animateDpAsState(if (on) 3.dp else 1.dp, tween(180), label = "tileBorderWidth")
                 Box(
-                    Modifier.aspectRatio(0.62f).clip(shape)
-                        .border(if (on) 3.dp else 1.dp, if (on) cs.primary else cs.outlineVariant, shape)
+                    Modifier.animateItem().cascadeIn(index, introClock).pressScale(0.96f).aspectRatio(0.62f).clip(shape)
+                        .border(borderWidth, borderColor, shape)
                         .combinedClickable(
                             onClick = { if (selected.isNotEmpty()) selected = if (on) selected - w.id else selected + w.id else onOpen(w.id) },
                             onLongClick = { selected = if (on) selected - w.id else selected + w.id }
                         )
                 ) {
-                    Thumb(vm.store.thumb(w.id), Modifier.fillMaxSize())
-                    Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(30.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).clickable { toDelete = setOf(w.id) }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Close, "Excluir", Modifier.size(16.dp), tint = Color.White)
-                    }
-                    if (on) Box(Modifier.align(Alignment.BottomStart).padding(8.dp).size(30.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = cs.onPrimary)
+                    Thumb(vm.store.thumb(w.id), Modifier.fillMaxSize(), revision = w.rev)
+                    AnimatedVisibility(
+                        visible = on,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+                        enter = scaleIn(spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium)) + fadeIn(tween(120)),
+                        exit = scaleOut(tween(120)) + fadeOut(tween(120))
+                    ) {
+                        Box(Modifier.size(30.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = cs.onPrimary)
+                        }
                     }
                 }
             }
         }
+    }
+
+    applyingId?.let { id ->
+        GalleryApplyDialog(
+            wallId = id,
+            vm = vm,
+            onDismiss = { applyingId = null },
+            onApplied = { applyingId = null; selected = emptySet() }
+        )
     }
 
     // ---- seletor de imagens que já estão no app ----
@@ -318,17 +372,26 @@ private fun WallPickerDialog(title: String, candidates: List<Wall>, store: Store
                     items(candidates, key = { it.id }) { w ->
                         val on = w.id in sel
                         val shape = RoundedCornerShape(16.dp)
-                        Box(Modifier.aspectRatio(0.62f).clip(shape).border(if (on) 3.dp else 1.dp, if (on) cs.primary else cs.outlineVariant, shape).clickable { sel = if (on) sel - w.id else sel + w.id }) {
-                            Thumb(store.thumb(w.id), Modifier.fillMaxSize())
-                            if (on) Box(Modifier.align(Alignment.BottomStart).padding(6.dp).size(26.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Check, null, Modifier.size(16.dp), tint = cs.onPrimary)
+                        val borderColor by animateColorAsState(if (on) cs.primary else cs.outlineVariant, tween(180), label = "pickBorderColor")
+                        val borderWidth by animateDpAsState(if (on) 3.dp else 1.dp, tween(180), label = "pickBorderWidth")
+                        Box(Modifier.pressScale(0.96f).aspectRatio(0.62f).clip(shape).border(borderWidth, borderColor, shape).clickable { sel = if (on) sel - w.id else sel + w.id }) {
+                            Thumb(store.thumb(w.id), Modifier.fillMaxSize(), revision = w.rev)
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = on,
+                                modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
+                                enter = scaleIn(spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium)) + fadeIn(tween(120)),
+                                exit = scaleOut(tween(120)) + fadeOut(tween(120))
+                            ) {
+                                Box(Modifier.size(26.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.Check, null, Modifier.size(16.dp), tint = cs.onPrimary)
+                                }
                             }
                         }
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onDismiss) { Text("Cancelar") }
-                    Button(onClick = { onConfirm(sel) }, enabled = sel.isNotEmpty()) { Text("Adicionar (${sel.size})") }
+                    Button(onClick = { onConfirm(sel) }, enabled = sel.isNotEmpty(), modifier = Modifier.pressScale()) { Text("Adicionar (${sel.size})") }
                 }
             }
         }

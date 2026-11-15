@@ -51,6 +51,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
 
 /*
  * Glass.kt — o Liquid Glass da INTERFACE (usado só na barra inferior e nos botões do topo).
@@ -131,6 +136,7 @@ fun GlassSurface(
         val cs = MaterialTheme.colorScheme
         Box(
             modifier
+                .then(if (onClick != null) Modifier.pressScale(0.95f) else Modifier)
                 .shadow(elevation, shape)
                 .clip(shape)
                 .background(cs.surfaceContainerHigh)
@@ -154,6 +160,7 @@ fun GlassSurface(
     )
     Box(
         modifier
+            .then(if (onClick != null) Modifier.pressScale(0.95f) else Modifier)
             .shadow(elevation, shape)
             .clip(shape)
             .onGloballyPositioned { pos = it.positionInRoot() }
@@ -210,16 +217,30 @@ fun NavItem(on: Boolean, icon: ImageVector, label: String, modifier: Modifier = 
         animationSpec = tween(durationMillis = 220),
         label = "navItemBackground"
     )
+    // "Pulinho" do ícone quando o item passa a ficar selecionado: encolhe um pouco e volta com mola.
+    val pulse = remember { Animatable(1f) }
+    LaunchedEffect(on) {
+        if (on) {
+            pulse.snapTo(0.8f)
+            pulse.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium))
+        }
+    }
     Row(
-        modifier.clip(CircleShape)
+        modifier.pressScale(0.92f).clip(CircleShape)
             .background(itemBackground)
             .clickable(onClick = onClick)
             .animateContentSize(animationSpec = tween(durationMillis = 220))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, label, Modifier.size(22.dp), tint = tint)
-        if (on) { Spacer(Modifier.width(6.dp)); Text(label, style = MaterialTheme.typography.labelMedium, color = tint, maxLines = 1) }
+        Icon(icon, label, Modifier.size(22.dp).graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }, tint = tint)
+        if (on) {
+            // O nome aparece com um fade enquanto a pílula se alarga.
+            val labelAlpha = remember { Animatable(0f) }
+            LaunchedEffect(Unit) { labelAlpha.animateTo(1f, tween(durationMillis = 240)) }
+            Spacer(Modifier.width(6.dp))
+            Text(label, Modifier.graphicsLayer { alpha = labelAlpha.value }, style = MaterialTheme.typography.labelMedium, color = tint, maxLines = 1)
+        }
     }
 }
 
