@@ -195,7 +195,16 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
                             Text(a.name, Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 1)
                             Text("${wallsByAlbum[a.id].orEmpty().size} imagens", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                         }
-                        Text(if (albums.any { it.slide }) "Somente os álbuns marcados" else "Todos os wallpapers", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+                        val slideAlbums = albums.filter { it.slide }
+                        val slideEmpty = slideAlbums.isNotEmpty() && slideAlbums.all { wallsByAlbum[it.id].isNullOrEmpty() }
+                        Text(
+                            when {
+                                slideEmpty -> "Os álbuns marcados estão vazios: a troca automática não vai trocar nada."
+                                slideAlbums.isNotEmpty() -> "Somente os álbuns marcados"
+                                else -> "Todos os wallpapers"
+                            },
+                            style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant
+                        )
                     }
                 }
             }

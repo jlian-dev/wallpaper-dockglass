@@ -6,6 +6,7 @@ import com.dockliquida.app.system.RotationWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -35,6 +36,21 @@ object Backup {
 
     /** Nome sugerido no seletor de arquivos, ex.: DockLiquida_2026-11-12_1430.dckl */
     fun suggestedName(): String = "DockLiquida_" + SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date()) + "." + EXT
+
+    private fun validatePrefs(json: String) {
+        val root = JSONObject(json)
+        for (key in root.keys()) {
+            val entry = root.getJSONObject(key)
+            when (entry.getString("t")) {
+                "b" -> entry.getBoolean("v")
+                "i" -> entry.getInt("v")
+                "l" -> entry.getLong("v")
+                "f" -> entry.getDouble("v")
+                "s" -> entry.getString("v")
+                else -> throw IllegalStateException("Backup inválido (tipo de preferência).")
+            }
+        }
+    }
 
     /** Grava o backup no destino escolhido pelo usuário. Devolve quantas imagens foram incluídas. */
     suspend fun export(ctx: Context, uri: Uri): Int = withContext(Dispatchers.IO) {
@@ -87,7 +103,10 @@ object Backup {
             if (head.optString("magic") != MAGIC) throw IllegalStateException("Este arquivo não é um backup do Dock Líquida.")
             if (head.optInt("version") > VERSION) throw IllegalStateException("Backup feito por uma versão mais nova do app. Atualize o app primeiro.")
             val lib = library ?: throw IllegalStateException("Backup incompleto (sem biblioteca).")
-            JSONObject(lib)                                          // valida o JSON antes de apagar qualquer coisa
+            val libraryRoot = JSONObject(lib)
+            if (libraryRoot.opt("walls") !is JSONArray || libraryRoot.opt("albums") !is JSONArray)
+                throw IllegalStateException("Backup inválido (estrutura da biblioteca).")
+            prefsJson?.let { validatePrefs(it) }
 
             // Segura a trava da troca automática: se uma troca estiver renderizando agora, esperamos ela terminar, e
             // nenhuma começa enquanto as imagens estão sendo apagadas e trocadas (antes a troca lia arquivos sumindo).

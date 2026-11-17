@@ -8,6 +8,7 @@ import com.dockliquida.app.glass.BevelProfile
 import com.dockliquida.app.glass.GlassParams
 import com.dockliquida.app.render.ImageIo
 import com.dockliquida.app.system.Actions
+import com.dockliquida.app.system.RotationWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +58,23 @@ data class Wall(
 
 data class Album(val id: String, val name: String, val kind: Kind, val slide: Boolean = false)
 
+/**
+ * Tira referências a álbuns que não existem (ou que são da OUTRA galeria): a imagem volta a ficar "sem álbum".
+ * Sem isso, uma foto apontando para um álbum apagado some da galeria (ela só aparece dentro do álbum) mas continua
+ * na fila da troca automática, como uma imagem "fantasma".
+ */
+internal fun sanitizeAlbumRefs(walls: List<Wall>, albums: List<Album>): List<Wall> {
+    val kindById = albums.associate { it.id to it.kind }
+    return walls.map { w -> if (w.albumId != null && kindById[w.albumId] != w.kind) w.copy(albumId = null) else w }
+}
+
+/** Nova lista de álbuns ao (des)marcar o slideshow, ou null se passaria do limite de 2 álbuns marcados. */
+internal fun withSlide(albums: List<Album>, id: String, on: Boolean): List<Album>? {
+    val others = albums.count { it.kind == Kind.ROTATION && it.slide && it.id != id }   // os OUTROS já marcados
+    if (on && others >= 2) return null
+    return albums.map { if (it.id == id) it.copy(slide = on) else it }
+}
+
 /** (De)serialização de GlassParams em JSON. Fica aqui (e não no motor) porque org.json é coisa do Android. */
 internal fun GlassParams.toJson(): JSONObject = JSONObject()
     .put("x", x).put("y", y).put("w", w).put("h", h).put("r", r).put("blur", blur)
@@ -98,31 +116,51 @@ class Store private constructor(private val app: Context) {
     // ------------------------------------------------------------------ leitura/gravação do índice
     private fun load() {
         if (!indexFile.exists()) return
-        try { applyIndex(indexFile.readText()) } catch (e: Exception) { /* índice corrompido: começa vazio em vez de travar o app */ }
+        val discarded = try {
+            applyIndex(indexFile.readText())
+        } catch (e: Exception) {
+            -1                                                  // índice ilegível: começa vazio em vez de travar o app
+        }
+        if (discarded != 0) {
+            // Algo foi perdido na leitura. A próxima gravação sobrescreve o índice, então guardamos ANTES uma cópia do
+            // arquivo problemático (library.json.corrupt): dá para recuperar à mão (as imagens continuam na pasta).
+            runCatching { indexFile.copyTo(File(app.filesDir, "library.json.corrupt"), overwrite = true) }
+        }
     }
 
-    /** Lê o JSON do índice e atualiza as listas em memória. Lança exceção se o JSON for inválido. */
-    private fun applyIndex(text: String) {
+    /**
+     * Lê o JSON do índice e atualiza as listas em memória. Lança exceção se o JSON em si for inválido.
+     * Uma entrada isolada com defeito (campo faltando, valor desconhecido de uma versão mais nova…) é descartada sem
+     * derrubar o resto da biblioteca. Devolve quantas entradas foram descartadas.
+     */
+    private fun applyIndex(text: String): Int {
         val root = JSONObject(text)
+        var discarded = 0
         val ws = root.optJSONArray("walls") ?: JSONArray()
-        val walls = (0 until ws.length()).map { i ->
-            val o = ws.getJSONObject(i)
-            Wall(
-                id = o.getString("id"), kind = Kind.valueOf(o.optString("kind", "FIXED")),
-                name = o.optString("name", "imagem"), addedAt = o.optLong("addedAt"),
-                albumId = if (o.isNull("albumId")) null else o.optString("albumId"),
-                origW = o.optInt("origW"), origH = o.optInt("origH"),
-                outMode = OutMode.valueOf(o.optString("outMode", "AUTO")),
-                outW = o.optInt("outW"), outH = o.optInt("outH"),
-                dock = glassFromJson(o.getJSONObject("dock")), rev = o.optInt("rev", 0)
-            )
+        val walls = (0 until ws.length()).mapNotNull { i ->
+            runCatching {
+                val o = ws.getJSONObject(i)
+                Wall(
+                    id = o.getString("id"), kind = Kind.valueOf(o.optString("kind", "FIXED")),
+                    name = o.optString("name", "imagem"), addedAt = o.optLong("addedAt"),
+                    albumId = if (o.isNull("albumId")) null else o.optString("albumId"),
+                    origW = o.optInt("origW"), origH = o.optInt("origH"),
+                    outMode = OutMode.valueOf(o.optString("outMode", "AUTO")),
+                    outW = o.optInt("outW"), outH = o.optInt("outH"),
+                    dock = o.optJSONObject("dock")?.let { glassFromJson(it) } ?: GlassParams(), rev = o.optInt("rev", 0)
+                )
+            }.getOrElse { discarded++; null }
         }
         val al = root.optJSONArray("albums") ?: JSONArray()
-        val albums = (0 until al.length()).map { i ->
-            val o = al.getJSONObject(i)
-            Album(o.getString("id"), o.optString("name"), Kind.valueOf(o.optString("kind", "FIXED")), o.optBoolean("slide"))
+        val albums = (0 until al.length()).mapNotNull { i ->
+            runCatching {
+                val o = al.getJSONObject(i)
+                Album(o.getString("id"), o.optString("name"), Kind.valueOf(o.optString("kind", "FIXED")), o.optBoolean("slide"))
+            }.getOrElse { discarded++; null }
         }
-        _walls.value = walls; _albums.value = albums           // só troca depois de ler tudo com sucesso
+        // sanitizeAlbumRefs: imagens apontando para álbum inexistente voltam para "sem álbum" (não ficam invisíveis)
+        _walls.value = sanitizeAlbumRefs(walls, albums); _albums.value = albums   // só troca depois de ler tudo
+        return discarded
     }
 
     /** Monta o JSON do índice (wallpapers + álbuns + ajustes de cada dock). */
@@ -198,7 +236,8 @@ class Store private constructor(private val app: Context) {
                 }
             }
             if (added.isNotEmpty()) {
-                _walls.update { it + added }                          // update{} é atômico: não perde escritas de outras threads
+                // Se o álbum de destino foi apagado enquanto a importação rodava, a imagem entra "sem álbum" (não invisível).
+                _walls.update { it + added.map { w -> w.copy(albumId = validAlbumId(w.albumId, w.kind)) } }   // update{} é atômico
                 persist()
             }
             added
@@ -242,7 +281,7 @@ class Store private constructor(private val app: Context) {
                 added.add(src.copy(id = newId, kind = kind, albumId = albumId, addedAt = System.currentTimeMillis()))
             } catch (e: Exception) { file(newId).delete(); thumb(newId).delete() }
         }
-        _walls.update { it + added }
+        _walls.update { it + added.map { w -> w.copy(albumId = validAlbumId(w.albumId, w.kind)) } }
         persist()
         added.size
     }
@@ -258,12 +297,26 @@ class Store private constructor(private val app: Context) {
                 ?: return@withContext null
             val info = ImageIo.info(tmp)
             if (info.width <= 0 || info.height <= 0) { tmp.delete(); return@withContext null }
-            val dst = file(id)
-            dst.delete()
-            if (!tmp.renameTo(dst)) { tmp.copyTo(dst, overwrite = true); tmp.delete() }
-            makeThumb(id)
-            _walls.update { list -> list.map { if (it.id == id) it.copy(origW = info.width, origH = info.height, rev = it.rev + 1) else it } }
-            persist()
+            synchronized(RotationWorker.applyLock) {
+                val dst = file(id)
+                if (!dst.isFile || wall(id) == null) throw IllegalStateException("Wallpaper não encontrado.")
+                val previous = File(wallsDir, "$id.previous")
+                if (previous.exists()) previous.delete()
+                if (!dst.renameTo(previous)) throw IllegalStateException("Não foi possível proteger a imagem original.")
+                try {
+                    if (!tmp.renameTo(dst)) tmp.copyTo(dst, overwrite = true)
+                    makeThumb(id)
+                    _walls.update { list -> list.map { if (it.id == id) it.copy(origW = info.width, origH = info.height, rev = it.rev + 1) else it } }
+                    persist()
+                    previous.delete()
+                } catch (e: Exception) {
+                    dst.delete()
+                    if (!previous.renameTo(dst)) previous.copyTo(dst, overwrite = true)
+                    runCatching { makeThumb(id) }
+                    throw e
+                }
+            }
+            tmp.delete()
             info.width to info.height
         } catch (e: Exception) { tmp.delete(); null }
     }
@@ -301,9 +354,14 @@ class Store private constructor(private val app: Context) {
     }
 
     fun assignAlbum(ids: Collection<String>, albumId: String?) {
-        _walls.update { list -> list.map { if (it.id in ids) it.copy(albumId = albumId) else it } }
+        // Só aceita um álbum que exista e seja da mesma galeria da imagem; senão ela fica "sem álbum".
+        _walls.update { list -> list.map { if (it.id in ids) it.copy(albumId = validAlbumId(albumId, it.kind)) else it } }
         persist()
     }
+
+    /** O álbum existe e é da galeria `kind`? Devolve o id; senão null. */
+    private fun validAlbumId(albumId: String?, kind: Kind): String? =
+        albumId?.takeIf { id -> _albums.value.any { it.id == id && it.kind == kind } }
 
     // ------------------------------------------------------------------ álbuns
     fun createAlbum(name: String, kind: Kind): Album {
@@ -315,9 +373,11 @@ class Store private constructor(private val app: Context) {
     }
     /** Marca/desmarca o álbum no slideshow da troca automática (máximo de 2 álbuns, como no app web). */
     fun setSlide(id: String, on: Boolean): Boolean {
-        val rot = _albums.value.filter { it.kind == Kind.ROTATION }
-        if (on && rot.count { it.slide } >= 2) return false
-        _albums.update { list -> list.map { if (it.id == id) it.copy(slide = on) else it } }; persist(); return true
+        // Conferir o limite e gravar numa operação só (update é atômico): dois toques rápidos não passam de 2 álbuns.
+        var ok = true
+        _albums.update { list -> val next = withSlide(list, id, on); ok = next != null; next ?: list }
+        if (ok) persist()
+        return ok
     }
     fun deleteAlbum(id: String) {                                     // as imagens NÃO são apagadas: só saem do álbum
         _albums.update { list -> list.filter { it.id != id } }

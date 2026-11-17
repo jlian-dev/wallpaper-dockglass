@@ -77,7 +77,10 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
     val dynamicColors by p.dynamicColors.collectAsState()
     val rotOn by p.rotOn.collectAsState(); val hours by p.rotHours.collectAsState(); val target by p.rotTarget.collectAsState()
     val walls by vm.store.walls.collectAsState()
-    val queue = remember(walls) { vm.store.rotationQueue().size }
+    // A fila depende das imagens E dos álbuns marcados no slideshow: sem observar os álbuns, o número ficava desatualizado
+    // ao ligar/desligar um álbum do slideshow.
+    val allAlbums by vm.store.albums.collectAsState()
+    val queue = remember(walls, allAlbums) { vm.store.rotationQueue().size }
 
     // ---- economia de bateria do Android ----
     var batteryFree by remember { mutableStateOf(BatteryOptimization.isIgnoring(ctx)) }
@@ -221,7 +224,7 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
             Segmented(listOf("0.6" to "Rápida", "1.0" to "Normal", "1.6" to "Nítida"), quality.toString(), { p.setQuality(it.toFloat()) }, Modifier.fillMaxWidth())
         }
         SectionCard("Troca automática", Modifier.cascadeIn(3)) {
-            SwitchRow("Trocar sozinho", "Funciona com o app fechado · $queue imagem(ns) na fila", rotOn) {
+            SwitchRow("Trocar sozinho", if (queue == 0) "Nenhuma imagem na fila: adicione imagens à galeria automática (ou aos álbuns marcados no slideshow)" else "Funciona com o app fechado · $queue imagem(ns) na fila", rotOn) {
                 p.setRotOn(it); if (it) RotationWorker.schedule(ctx, hours) else RotationWorker.cancel(ctx)
             }
             SwitchRow("Sem economia de bateria", "O Android costuma atrasar as trocas com o app fechado. Ligue para ele não limitar este app (gasta um pouco mais de bateria)", batteryFree) { want ->

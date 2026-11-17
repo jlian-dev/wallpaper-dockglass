@@ -79,6 +79,7 @@ class RotationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
         private const val SP = "dockrotation"
         private const val KEY_NEXT = "next"        // posição (índice) usada só como plano B quando o ID guardado não existe mais
         private const val KEY_LAST_ID = "lastId"   // ID da última imagem aplicada com sucesso
+        private const val KEY_BATTERY_FREE = "batteryFree" // última situação vista da isenção de bateria (ver ensureScheduled)
         private const val KEY_LAST_ADDED = "lastAddedAt" // data de inclusão dessa imagem (referência se ela for apagada depois)
         private const val MAX_RETRIES = 3          // tentativas extras por ciclo quando o sistema recusa o wallpaper
         private const val MAX_CANDIDATES = 5       // quantas imagens ruins seguidas pulamos antes de desistir deste ciclo
@@ -129,8 +130,17 @@ class RotationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
          * Se estiver desligado, remove qualquer trabalho órfão.
          */
         fun ensureScheduled(ctx: Context) {
-            val prefs = Prefs.get(ctx.applicationContext)
-            if (prefs.rotOn.value) enqueue(ctx, prefs.rotHours.value, ExistingPeriodicWorkPolicy.KEEP) else cancel(ctx)
+            val app = ctx.applicationContext
+            val prefs = Prefs.get(app)
+            if (!prefs.rotOn.value) { cancel(ctx); return }
+            // As restrições do agendamento dependem de o app estar livre da economia de bateria. Se isso mudou FORA do app
+            // (nas configurações do Android), o trabalho já agendado ficou com a restrição antiga: UPDATE aplica a nova
+            // sem zerar a contagem do tempo. Na primeira vez não há valor guardado, então só mantém (KEEP).
+            val sp = app.getSharedPreferences(SP, Context.MODE_PRIVATE)
+            val free = BatteryOptimization.isIgnoring(app)
+            val changed = sp.contains(KEY_BATTERY_FREE) && sp.getBoolean(KEY_BATTERY_FREE, free) != free
+            enqueue(ctx, prefs.rotHours.value, if (changed) ExistingPeriodicWorkPolicy.UPDATE else ExistingPeriodicWorkPolicy.KEEP)
+            sp.edit().putBoolean(KEY_BATTERY_FREE, free).apply()
         }
 
         /** Troca manual ("Trocar agora"): funciona mesmo com o agendamento desativado. */
