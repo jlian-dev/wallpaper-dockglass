@@ -152,10 +152,7 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
             }
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding().padding(top = 4.dp)) {
-                Box(Modifier.weight(1.8f).fillMaxWidth()) {
-                    PreviewArea(vm, Modifier.fillMaxSize())
-                    LockScreenMiniPreview(vm, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 68.dp))
-                }
+                EditorPreviews(vm, Modifier.weight(1.8f))
 
                 if (!big) {
                     // ---- painel Material 3: superfície em camada, cantos de 28 dp no topo ----
@@ -310,6 +307,37 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
     }
 }
 
+/** As duas imagens dividem a mesma área; nenhuma fica sobre a outra. */
+@Composable
+private fun EditorPreviews(vm: EditorVM, modifier: Modifier) {
+    val split = vm.lockEnabled && vm.lockPreviewVisible
+    Column(modifier.fillMaxWidth().padding(top = 62.dp)) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            Row(Modifier.fillMaxSize()) {
+                if (split) LockScreenPreviewPane(vm, Modifier.weight(1f).fillMaxHeight())
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    if (split) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+                        Text("Inicial", style = MaterialTheme.typography.labelLarge)
+                    }
+                    PreviewArea(vm, Modifier.weight(1f))
+                }
+            }
+            if (vm.lockEnabled && !vm.lockPreviewVisible) {
+                LockScreenPreviewRestore(vm, Modifier.align(Alignment.CenterStart).padding(start = 12.dp))
+            }
+        }
+        // Legenda como na versão anterior: tamanho, % da prévia e aviso se a foto estiver muito ampliada
+        val up = vm.upscale()
+        val pct = (vm.shownFactor * 100).roundToInt()
+        Text(
+            "${vm.outW} × ${vm.outH} px (prévia a $pct%, o PNG sai em 100%)" +
+                if (up > 1.05) " · papel de parede ampliado ${"%.2f".format(up)}×: pode perder nitidez" else "",
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
 /**
  * Prévia com gestos (composable próprio: a troca do bitmap a cada quadro NÃO recompõe os sliders).
  * A imagem tem o tamanho EXATO da geometria, então o toque corresponde ao pixel certo da saída.
@@ -321,7 +349,7 @@ private fun PreviewArea(vm: EditorVM, modifier: Modifier) {
     val hasPreview = vm.preview != null
     LaunchedEffect(hasPreview) { if (hasPreview && appear.value < 1f) appear.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) }
     Column(modifier.fillMaxWidth()) {
-        Box(Modifier.weight(1f).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 62.dp, bottom = 2.dp)) {
+        Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
             Box(
                 Modifier.fillMaxSize()
                     .onSizeChanged { vm.setBox(it.width.toFloat(), it.height.toFloat()) }
@@ -363,15 +391,7 @@ private fun PreviewArea(vm: EditorVM, modifier: Modifier) {
                 } else CircularProgressIndicator()
             }
         }
-        // Legenda como na versão anterior: tamanho, % da prévia e aviso se a foto estiver muito ampliada
-        val up = vm.upscale()
-        val pct = (vm.shownFactor * 100).roundToInt()
-        Text(
-            "${vm.outW} × ${vm.outH} px (prévia a $pct%, o PNG sai em 100%)" +
-                if (up > 1.05) " · papel de parede ampliado ${"%.2f".format(up)}×: pode perder nitidez" else "",
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+
     }
 }
 

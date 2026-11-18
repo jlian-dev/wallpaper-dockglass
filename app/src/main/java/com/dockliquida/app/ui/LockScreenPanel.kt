@@ -68,47 +68,51 @@ internal fun LockScreenPanel(vm: EditorVM) {
     }
 }
 
-/** Prévia pequena sobre a área principal; recolher libera a referência e suspende novos pedidos. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Painel normal no layout: recebe metade da largura e a mesma altura da prévia principal. */
 @Composable
-internal fun LockScreenMiniPreview(vm: EditorVM, modifier: Modifier = Modifier) {
-    if (!vm.lockEnabled) return
-    if (!vm.lockPreviewVisible) {
-        Surface(onClick = { vm.changeLockPreviewVisibility(true) }, modifier = modifier.size(48.dp),
-            shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.semantics { contentDescription = "Mostrar prévia do bloqueio" }) {
-                Text("›", style = MaterialTheme.typography.headlineMedium)
-            }
-        }
-        return
-    }
-    Surface(modifier = modifier.width(116.dp), shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
-        Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Bloqueio", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-                IconButton(onClick = { vm.changeLockPreviewVisibility(false) }, modifier = Modifier.size(40.dp)) {
-                    val color = MaterialTheme.colorScheme.onSurface
-                    Canvas(Modifier.size(22.dp).semantics { contentDescription = "Ocultar prévia do bloqueio" }) {
-                        val eye = Path().apply {
-                            moveTo(0f, size.height / 2)
-                            quadraticBezierTo(size.width / 2, -size.height / 5, size.width, size.height / 2)
-                            quadraticBezierTo(size.width / 2, size.height * 1.2f, 0f, size.height / 2)
-                            close()
-                        }
-                        drawPath(eye, color, style = Stroke(1.5.dp.toPx()))
-                        drawCircle(color, size.minDimension * .13f)
+internal fun LockScreenPreviewPane(vm: EditorVM, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("Bloqueio", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            IconButton(onClick = { vm.changeLockPreviewVisibility(false) }, modifier = Modifier.size(48.dp)) {
+                val color = MaterialTheme.colorScheme.onSurface
+                Canvas(Modifier.size(22.dp).semantics { contentDescription = "Ocultar prévia do bloqueio" }) {
+                    val eye = Path().apply {
+                        moveTo(0f, size.height / 2)
+                        quadraticBezierTo(size.width / 2, -size.height / 5, size.width, size.height / 2)
+                        quadraticBezierTo(size.width / 2, size.height * 1.2f, 0f, size.height / 2)
+                        close()
                     }
+                    drawPath(eye, color, style = Stroke(1.5.dp.toPx()))
+                    drawCircle(color, size.minDimension * .13f)
                 }
             }
-            Box(Modifier.fillMaxWidth().height(174.dp).clip(RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                val bitmap = vm.lockPreview
-                if (bitmap != null) Image(bitmap.asImageBitmap(), "Prévia reduzida do bloqueio",
-                    Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-                else if (vm.lockPreviewError != null) Text(vm.lockPreviewError!!,
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                else CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-            }
+        }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+            contentAlignment = Alignment.Center) {
+            val bitmap = vm.lockPreview
+            if (bitmap != null && vm.outW > 0 && vm.outH > 0) {
+                val ratio = vm.outW.toFloat() / vm.outH
+                val width = minOf(maxWidth, maxHeight * ratio)
+                Image(bitmap.asImageBitmap(), "Prévia reduzida do bloqueio",
+                    Modifier.size(width, width / ratio).clip(RoundedCornerShape(24.dp)),
+                    contentScale = ContentScale.FillBounds)
+            } else if (vm.lockPreviewError != null) Text(vm.lockPreviewError!!,
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            else CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun LockScreenPreviewRestore(vm: EditorVM, modifier: Modifier = Modifier) {
+    Surface(onClick = { vm.changeLockPreviewVisibility(true) }, modifier = modifier.size(48.dp),
+        shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Box(contentAlignment = Alignment.Center,
+            modifier = Modifier.semantics { contentDescription = "Mostrar prévia do bloqueio" }) {
+            Text("›", style = MaterialTheme.typography.headlineMedium)
         }
     }
 }
