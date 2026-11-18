@@ -2,7 +2,6 @@ package com.dockliquida.app.system
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.graphics.Bitmap
 import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
@@ -14,7 +13,6 @@ import androidx.work.WorkerParameters
 import com.dockliquida.app.data.Prefs
 import com.dockliquida.app.data.Store
 import com.dockliquida.app.data.Wall
-import com.dockliquida.app.render.WallpaperRenderer
 import java.util.concurrent.TimeUnit
 
 /*
@@ -175,6 +173,7 @@ class RotationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
 
             val sp = app.getSharedPreferences(SP, Context.MODE_PRIVATE)
             val start = startIndex(sp, queue)
+            val target = WallTarget.fromKey(prefs.rotTarget.value)
 
             // Tenta a imagem da vez; se ela estiver ruim, passa para a seguinte (no máximo MAX_CANDIDATES).
             for (step in 0 until minOf(queue.size, MAX_CANDIDATES)) {
@@ -182,13 +181,12 @@ class RotationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
                 val index = (start + step) % queue.size
                 val wall = queue[index]
 
-                val bitmap = renderWall(store, prefs, wall) ?: continue   // imagem ruim: pula
-
                 try {
-                    if (!shouldContinue()) return RotationOutcome.CANCELLED         // cancelado enquanto renderizava: não aplica
-                    Actions.applyWallpaper(app, bitmap, WallTarget.fromKey(prefs.rotTarget.value))
-                } finally {
-                    bitmap.recycle()                                        // sempre libera, mesmo se o Android recusar
+                    if (!Actions.applyWall(app, store, wall, prefs.dockFor(wall), target, shouldContinue))
+                        return RotationOutcome.CANCELLED
+                } catch (e: WallpaperRenderException) {
+                    Log.w(TAG, "Imagem inválida: ${wall.id}", e)
+                    continue // mantém a proteção de até cinco candidatas por tentativa
                 }
 
                 // Só avança a fila quando o Android aceita aplicar o wallpaper. commit() (síncrono) em vez de apply():
@@ -209,23 +207,5 @@ class RotationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
         private fun startIndex(sp: SharedPreferences, queue: List<Wall>): Int =
             pickRotationStart(queue, sp.getString(KEY_LAST_ID, null), sp.getLong(KEY_LAST_ADDED, 0L), sp.getInt(KEY_NEXT, 0))
 
-        /** Renderiza uma imagem da fila. Devolve null (em vez de lançar erro) se ela não puder ser gerada. */
-        private fun renderWall(store: Store, prefs: Prefs, wall: Wall): Bitmap? {
-            val file = store.file(wall.id)
-            if (!file.isFile) {                                           // apagada/restaurada por fora enquanto estava na fila
-                Log.w(TAG, "Arquivo da imagem não existe: ${wall.id}")
-                return null
-            }
-            return try {
-                WallpaperRenderer.renderFull(file, wall.outW, wall.outH, prefs.dockFor(wall))
-                    ?: run { Log.e(TAG, "Falha ao renderizar wallpaper: ${wall.id}"); null }
-            } catch (e: OutOfMemoryError) {
-                Log.e(TAG, "Sem memória para renderizar ${wall.id}", e)
-                null
-            } catch (e: Exception) {
-                Log.e(TAG, "Erro ao renderizar ${wall.id}", e)
-                null
-            }
-        }
     }
 }

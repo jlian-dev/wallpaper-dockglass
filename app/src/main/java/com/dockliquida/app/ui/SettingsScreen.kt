@@ -48,6 +48,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.dockliquida.app.BuildConfig
+import com.dockliquida.app.data.BackupLocation
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.CancellationException
 import com.dockliquida.app.data.Backup
 import com.dockliquida.app.system.RotationOutcome
 import com.dockliquida.app.system.RotationWorker
@@ -95,14 +98,36 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
     var switching by remember { mutableStateOf(false) }             // true enquanto "Trocar agora" está renderizando
     var busy by remember { mutableStateOf<String?>(null) }          // texto do "aguarde" (null = livre)
     var askRestore by remember { mutableStateOf(false) }            // confirmação antes de restaurar
-    // Exportar: o seletor do Android deixa você escolher a pasta e o nome (sugerimos DockLiquida_data.dckl)
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        if (uri != null) scope.launch {
-            busy = "Gerando backup…"
+    var backupFolder by remember { mutableStateOf(BackupLocation.folder(ctx)) }
+    var exportAfterPick by rememberSaveable { mutableStateOf(false) }
+
+    fun exportBackup() {
+        if (busy != null) return
+        busy = "Gerando backup…"
+        scope.launch {
             try {
-                val n = Backup.export(ctx, uri)
+                val n = BackupLocation.export(ctx)
                 Toast.makeText(ctx, "Backup salvo com $n imagem(ns).", Toast.LENGTH_LONG).show()
-            } catch (e: Throwable) { Toast.makeText(ctx, "Falha no backup: ${e.message}", Toast.LENGTH_LONG).show() } finally { busy = null }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: OutOfMemoryError) {
+                Toast.makeText(ctx, "Memória insuficiente para gerar o backup.", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Falha no backup: ${e.message}. Confira a pasta de backup.", Toast.LENGTH_LONG).show()
+            } finally { busy = null }
+        }
+    }
+    val backupFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val exportNow = exportAfterPick
+        exportAfterPick = false
+        if (uri != null) {
+            try {
+                BackupLocation.rememberFolder(ctx, uri)
+                backupFolder = uri
+                if (exportNow) exportBackup()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Não foi possível usar esta pasta: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
     // Restaurar: escolhe um arquivo .dckl (o tipo MIME dele é desconhecido, então liberamos todos)
@@ -267,7 +292,26 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
                 "Salva num único arquivo .${Backup.EXT} as suas imagens, álbuns, ajustes de cada dock e preferências.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Button(onClick = { exportLauncher.launch(Backup.suggestedName()) }, Modifier.fillMaxWidth().pressScale()) { Text("Exportar backup (.${Backup.EXT})") }
+            Text(
+                backupFolder?.let { "Pasta de backup: ${BackupLocation.label(it)}" }
+                    ?: "No primeiro backup, escolha a pasta onde os arquivos serão salvos.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(onClick = {
+                val folder = backupFolder
+                if (folder == null || !BackupLocation.canWrite(ctx, folder)) {
+                    exportAfterPick = true
+                    backupFolderLauncher.launch(folder)
+                } else exportBackup()
+            }, enabled = busy == null, modifier = Modifier.fillMaxWidth().pressScale()) {
+                Text("Exportar backup (.${Backup.EXT})")
+            }
+            OutlinedButton(onClick = {
+                exportAfterPick = false
+                backupFolderLauncher.launch(backupFolder)
+            }, enabled = busy == null, modifier = Modifier.fillMaxWidth().pressScale()) {
+                Text("Alterar pasta de backup")
+            }
             OutlinedButton(onClick = { askRestore = true }, Modifier.fillMaxWidth().pressScale()) { Text("Restaurar backup") }
         }
         SectionCard("Sobre", Modifier.cascadeIn(5)) {

@@ -31,7 +31,7 @@ import java.util.zip.ZipOutputStream
 object Backup {
     const val EXT = "dckl"
     private const val MAGIC = "DockLiquidaBackup"
-    private const val VERSION = 1
+    private const val VERSION = 2
     private val ID_RE = Regex("[A-Za-z0-9_-]{1,40}")               // só aceita nomes de arquivo "seguros" (evita caminhos maliciosos)
 
     /** Nome sugerido no seletor de arquivos, ex.: DockLiquida_2026-11-12_1430.dckl */
@@ -63,9 +63,11 @@ object Backup {
                 .put("createdAt", System.currentTimeMillis()).put("images", walls.size).toString())
             text("library.json", store.exportIndexJson())
             text("prefs.json", prefs.exportJson())
-            for (w in walls) {
-                zip.putNextEntry(ZipEntry("walls/${w.id}"))
-                store.file(w.id).inputStream().use { it.copyTo(zip) }
+            val assets = (walls.map { it.id } + walls.mapNotNull { it.lock?.imageId }).distinct()
+            for (id in assets) {
+                check(store.file(id).isFile) { "Imagem de bloqueio ausente. Selecione a foto novamente antes do backup." }
+                zip.putNextEntry(ZipEntry("walls/$id"))
+                store.file(id).inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
         }
@@ -106,6 +108,15 @@ object Backup {
             val libraryRoot = JSONObject(lib)
             if (libraryRoot.opt("walls") !is JSONArray || libraryRoot.opt("albums") !is JSONArray)
                 throw IllegalStateException("Backup inválido (estrutura da biblioteca).")
+            // Valida as fotos independentes ANTES de substituir a biblioteca atual.
+            val records = libraryRoot.getJSONArray("walls")
+            for (i in 0 until records.length()) {
+                records.getJSONObject(i).optJSONObject("lock")?.let { obj ->
+                    lockFromJson(obj).imageId?.let { id ->
+                        require(File(tmp, id).isFile) { "Backup incompleto: falta uma foto de bloqueio." }
+                    }
+                }
+            }
             prefsJson?.let { validatePrefs(it) }
 
             // Segura a trava da troca automática: se uma troca estiver renderizando agora, esperamos ela terminar, e

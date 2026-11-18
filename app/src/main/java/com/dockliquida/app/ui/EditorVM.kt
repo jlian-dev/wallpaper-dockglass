@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dockliquida.app.data.LockWallpaper
 import com.dockliquida.app.data.OutMode
 import com.dockliquida.app.data.Prefs
 import com.dockliquida.app.data.Store
@@ -29,6 +30,8 @@ import com.dockliquida.app.system.OverlayResult
 import com.dockliquida.app.system.WallTarget
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -61,6 +64,123 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
     var style by mutableStateOf<GlassStyle?>(null); private set      // estilo "puro" selecionado (some ao mexer num controle)
     var busy by mutableStateOf<String?>(null); private set           // texto do carregando (null = livre)
     var message by mutableStateOf<String?>(null)                      // aviso curto (a tela mostra um Toast e limpa)
+
+    var lockConfig by mutableStateOf<LockWallpaper?>(null); private set
+    val lockEnabled: Boolean get() = lockConfig?.enabled == true
+    var lockPreview by mutableStateOf<Bitmap?>(null); private set
+    var lockPreviewVisible by mutableStateOf(true); private set
+    var lockPreviewError by mutableStateOf<String?>(null); private set
+    private data class LockReq(val file: java.io.File, val width: Int, val height: Int, val params: GlassParams, val version: Long)
+    private val lockRequests = Channel<LockReq?>(Channel.CONFLATED)
+    @Volatile private var lockVersion = 0L
+    private var lockSettleJob: Job? = null
+
+    init {
+        viewModelScope.launch(Dispatchers.Default) {
+            for (request in lockRequests) {
+                if (request == null || request.version != lockVersion) continue
+                var bitmap: Bitmap? = null
+                var published = false
+                try {
+                    val factor = min(0.35, 480.0 / max(request.width, request.height))
+                    bitmap = WallpaperRenderer.renderFull(request.file, request.width, request.height,
+                        request.params, factor, withDock = false)
+                        ?: error("Não foi possível abrir a imagem de bloqueio.")
+                    withContext(Dispatchers.Main) {
+                        if (request.version == lockVersion && lockEnabled && lockPreviewVisible && wallRef != null) {
+                            lockPreview = bitmap
+                            published = true
+                        }
+                    }
+                } catch (e: CancellationException) { throw e
+                } catch (e: OutOfMemoryError) {
+                    withContext(Dispatchers.Main) {
+                        if (request.version == lockVersion) {
+                            lockPreview = null
+                            lockPreviewError = "Memória insuficiente para a prévia."
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        if (request.version == lockVersion) {
+                            lockPreview = null
+                            lockPreviewError = "Não foi possível gerar a prévia do bloqueio."
+                        }
+                    }
+                } finally { if (!published) bitmap?.recycle() }
+            }
+        }
+    }
+
+    private fun requestLockPreview() {
+        lockSettleJob?.cancel()
+        val version = ++lockVersion
+        if (!lockEnabled || !lockPreviewVisible || outW <= 0 || outH <= 0) {
+            lockRequests.trySend(null)
+            lockPreview = null
+            return
+        }
+        val w = wallRef ?: return
+        val config = lockConfig ?: return
+        lockPreviewError = null
+        val request = LockReq(store.file(config.imageId ?: w.id), outW, outH, config.params, version)
+        lockSettleJob = viewModelScope.launch { delay(180); lockRequests.trySend(request) }
+    }
+
+    fun setLockEnabled(enabled: Boolean) {
+        lockConfig = (lockConfig ?: LockWallpaper(params = params)).copy(enabled = enabled)
+        requestLockPreview(); scheduleSave()
+    }
+
+    fun changeLockPreviewVisibility(visible: Boolean) {
+        lockPreviewVisible = visible
+        requestLockPreview()
+    }
+
+    fun updateLock(change: (GlassParams) -> GlassParams) {
+        val config = lockConfig ?: return
+        lockConfig = config.copy(params = change(config.params))
+        requestLockPreview(); scheduleSave()
+    }
+
+    fun useMainImageForLock() {
+        val old = lockConfig?.imageId
+        lockConfig = (lockConfig ?: LockWallpaper(params = params)).copy(imageId = null)
+        saveJob?.cancel(); saveNow()
+        lockPreview = null
+        requestLockPreview()
+        store.discardLockImage(old)
+    }
+
+    fun replaceLockImage(uri: Uri) {
+        val id = wallRef?.id ?: return
+        if (busy != null) return
+        val session = imageLoadVersion
+        busy = "Abrindo foto de bloqueio…"
+        viewModelScope.launch {
+            var imported: String? = null
+            try {
+                imported = store.importLockImage(uri)
+                if (wallRef?.id != id || session != imageLoadVersion) return@launch
+                val previous = lockConfig?.imageId
+                lockConfig = (lockConfig ?: LockWallpaper(params = params)).copy(
+                    enabled = true, imageId = imported,
+                    params = (lockConfig?.params ?: params).copy(zoom = 100, panX = 0, panY = 0)
+                )
+                saveJob?.cancel(); saveNow()
+                imported = null // arquivo pertence agora à configuração persistida
+                lockPreview = null
+                requestLockPreview()
+                store.discardLockImage(previous)
+            } catch (e: CancellationException) { throw e
+            } catch (e: OutOfMemoryError) { message = "Memória insuficiente para abrir a foto."
+            } catch (e: Exception) { message = e.message ?: "Não foi possível trocar a foto de bloqueio."
+            } finally {
+                store.discardLockImage(imported)
+                busy = null
+            }
+        }
+    }
 
     private var wallRef: Wall? = null                                  // cópia de trabalho (NÃO é estado: mudar isso não redesenha a tela toda)
     private var image: LoadedImage? = null
@@ -118,9 +238,12 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
     fun open(id: String) {
         if (wall?.id == id) { requestRender(); return }               // já está aberto (ex.: voltou do overlay)
         val w = store.wall(id) ?: return
+        lockSettleJob?.cancel(); lockVersion++; lockRequests.trySend(null)
+        lockConfig = w.lock; lockPreview = null; lockPreviewError = null; lockPreviewVisible = true
         renderVersion++
         wall = w; wallRef = w; preview = null; image = null; style = null
         params = prefs.dockFor(w); outMode = w.outMode; outW = w.outW; outH = w.outH
+        requestLockPreview()
         val loadVersion = ++imageLoadVersion
         viewModelScope.launch {
             val bmp = withContext(Dispatchers.IO) { ImageIo.decodeMaxSide(store.file(id), 2560) }   // 2560 px: sobra para a prévia
@@ -133,6 +256,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
 
     /** Grava tudo e marca este wallpaper como o "último aberto" (usado na Home). */
     fun close() {
+        lockSettleJob?.cancel(); lockVersion++; lockRequests.trySend(null); lockPreview = null
         settleJob?.cancel()
         imageLoadVersion++
         renderVersion++
@@ -151,7 +275,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
     }
     private fun saveNow() {
         val w = wallRef ?: return
-        val updated = w.copy(dock = params, outMode = outMode, outW = outW, outH = outH)
+        val updated = w.copy(dock = params, outMode = outMode, outW = outW, outH = outH, lock = lockConfig)
         wallRef = updated                                              // (antes isto mudava o estado e recompunha o painel inteiro a cada salvamento)
         store.update(updated)
         prefs.saveLastDock(params, outW, outH)                        // "reutilizar as configurações anteriores"
@@ -225,6 +349,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
             outW = nw; outH = nh
         }
         outMode = mode
+        requestLockPreview()
         requestRender(); scheduleSave()
     }
 
@@ -267,6 +392,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
      */
     fun replaceImage(uri: Uri) {
         val w = wallRef ?: return
+        saveJob?.cancel(); saveNow()
         val loadVersion = ++imageLoadVersion
         settleJob?.cancel()
         renderVersion++
@@ -285,6 +411,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
                 image = LoadedImage(bmp, size.first, size.second, ++imageCounter)
                 saveNow()
                 requestRender()
+                requestLockPreview()
                 message = "Foto trocada."
             } catch (e: Throwable) { message = e.message ?: "Falha ao trocar a foto." } finally { busy = null }
         }
@@ -391,16 +518,26 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
     /** Aplica direto como papel de parede, sem baixar nem salvar. */
     fun applyWallpaper(target: WallTarget) {
         val w = wallRef ?: return
+        if (busy != null) return
+        val applyW = outW
+        val applyH = outH
+        val applyParams = params
+        val applyWall = w.copy(outW = applyW, outH = applyH, dock = applyParams, lock = lockConfig)
         saveJob?.cancel(); saveNow()
         viewModelScope.launch {
             busy = "Aplicando wallpaper…"
             try {
                 withContext(Dispatchers.Default) {
-                    val bmp = WallpaperRenderer.renderFull(store.file(w.id), outW, outH, params)
-                        ?: throw IllegalStateException("Não foi possível gerar a imagem.")
-                    try { Actions.applyWallpaper(ctx, bmp, target) } finally { bmp.recycle() }
+                    val operationContext = currentCoroutineContext()
+                    synchronized(com.dockliquida.app.system.RotationWorker.applyLock) {
+                        Actions.applyWall(ctx, store, applyWall, applyParams, target) {
+                            operationContext.ensureActive()
+                            true
+                        }
+                    }
                 }
                 message = "Papel de parede aplicado!"
+            } catch (e: CancellationException) { throw e
             } catch (e: Throwable) { message = "Não foi possível aplicar: ${e.message}" } finally { busy = null }
         }
     }

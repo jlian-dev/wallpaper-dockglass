@@ -20,7 +20,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.dockliquida.app.render.WallpaperRenderer
 import com.dockliquida.app.system.Actions
 import com.dockliquida.app.system.RotationWorker
 import com.dockliquida.app.system.WallTarget
@@ -56,14 +55,10 @@ internal fun GalleryApplyDialog(
                         operationContext.ensureActive()
                         val wall = vm.store.wall(wallId)
                             ?: throw IllegalStateException("A imagem não está mais na galeria.")
-                        val bitmap = WallpaperRenderer.renderFull(
-                            vm.store.file(wall.id), wall.outW, wall.outH, vm.prefs.dockFor(wall)
-                        ) ?: throw IllegalStateException("Não foi possível gerar a imagem.")
-                        try {
+                        operationContext.ensureActive()
+                        Actions.applyWall(appContext, vm.store, wall, vm.prefs.dockFor(wall), target) {
                             operationContext.ensureActive()
-                            Actions.applyWallpaper(appContext, bitmap, target)
-                        } finally {
-                            bitmap.recycle()
+                            true
                         }
                     }
                 }
@@ -88,9 +83,11 @@ internal fun GalleryApplyDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (applying) {
                     CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
-                    Text("Preparando a imagem com sua Dock.")
+                    Text("Preparando o papel de parede…")
                 } else {
-                    Text("Escolha onde aplicar a imagem selecionada com a Dock salva.")
+                    Text(if (com.dockliquida.app.BuildConfig.DEBUG || vm.store.wall(wallId)?.lock?.enabled == true)
+                        "Inicial com Dock; bloqueio usa a foto e os ajustes salvos no editor."
+                    else "Escolha onde aplicar a imagem selecionada com a Dock salva.")
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     for (target in WallTarget.values()) {
                         FilledTonalButton(onClick = { apply(target) }, modifier = Modifier.fillMaxWidth()) {

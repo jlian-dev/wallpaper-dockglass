@@ -152,7 +152,10 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
             }
         ) {
             Column(Modifier.fillMaxSize().statusBarsPadding().padding(top = 4.dp)) {
-                PreviewArea(vm, Modifier.weight(1.8f))          // prévia com ~30% mais altura que o painel
+                Box(Modifier.weight(1.8f).fillMaxWidth()) {
+                    PreviewArea(vm, Modifier.fillMaxSize())
+                    LockScreenMiniPreview(vm, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 68.dp))
+                }
 
                 if (!big) {
                     // ---- painel Material 3: superfície em camada, cantos de 28 dp no topo ----
@@ -210,9 +213,12 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
                                 ) { current ->
                                     // Column: os painéis emitem vários blocos soltos; aqui eles precisam ficar empilhados.
                                     Column {
-                                        if (current == "base") BasePanel(vm, onSwapPhoto = {
-                                            swapPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                        }) else DockPanel(vm)
+                                        if (current == "base") {
+                                            BasePanel(vm, onSwapPhoto = {
+                                                swapPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                            })
+                                            LockScreenPanel(vm)
+                                        } else DockPanel(vm)
                                     }
                                 }
                             }
@@ -249,6 +255,9 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
             ) {
                 Text("Aplicar wallpaper em", style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(bottom = 6.dp))
+                if (com.dockliquida.app.BuildConfig.DEBUG || vm.lockEnabled) {
+                    Text("Inicial com Dock • Bloqueio com sua edição independente, sem Dock", style = MaterialTheme.typography.bodyMedium)
+                }
                 WallTarget.values().forEach { target ->
                     val active = targetSelected == target
                     // Cores mudam suavemente ao escolher outra opção (as cores finais são as mesmas de antes).

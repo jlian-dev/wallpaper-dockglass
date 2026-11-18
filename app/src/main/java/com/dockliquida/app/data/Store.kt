@@ -53,7 +53,8 @@ data class Wall(
     val outW: Int,                 // tamanho de saída em px
     val outH: Int,
     val dock: GlassParams,         // a dock (posição, vidro, enquadramento) DESTE wallpaper
-    val rev: Int = 0               // sobe a cada "Trocar foto" (força a interface a recarregar a miniatura)
+    val rev: Int = 0,              // sobe a cada "Trocar foto" (força a interface a recarregar a miniatura)
+    val lock: LockWallpaper? = null
 )
 
 data class Album(val id: String, val name: String, val kind: Kind, val slide: Boolean = false)
@@ -113,6 +114,23 @@ class Store private constructor(private val app: Context) {
     fun thumb(id: String) = File(thumbsDir, "$id.jpg")
     fun wall(id: String?): Wall? = _walls.value.firstOrNull { it.id == id }
 
+    /** Importação privada: a foto do bloqueio não aparece como wallpaper extra na galeria. */
+    suspend fun importLockImage(uri: Uri): String = withContext(Dispatchers.IO) {
+        val id = "lock_" + UUID.randomUUID().toString().take(12)
+        val dest = file(id)
+        try {
+            app.contentResolver.openInputStream(uri)?.use { input -> dest.outputStream().use { input.copyTo(it) } }
+                ?: error("Não foi possível abrir a imagem de bloqueio.")
+            val info = ImageIo.info(dest)
+            require(info.width > 0 && info.height > 0) { "O arquivo não é uma imagem válida." }
+            id
+        } catch (e: Throwable) { dest.delete(); throw e }
+    }
+
+    fun discardLockImage(id: String?) {
+        if (id != null && id.startsWith("lock_") && _walls.value.none { it.lock?.imageId == id }) file(id).delete()
+    }
+
     // ------------------------------------------------------------------ leitura/gravação do índice
     private fun load() {
         if (!indexFile.exists()) return
@@ -147,7 +165,8 @@ class Store private constructor(private val app: Context) {
                     origW = o.optInt("origW"), origH = o.optInt("origH"),
                     outMode = OutMode.valueOf(o.optString("outMode", "AUTO")),
                     outW = o.optInt("outW"), outH = o.optInt("outH"),
-                    dock = o.optJSONObject("dock")?.let { glassFromJson(it) } ?: GlassParams(), rev = o.optInt("rev", 0)
+                    dock = o.optJSONObject("dock")?.let { glassFromJson(it) } ?: GlassParams(),
+                    lock = o.optJSONObject("lock")?.let { lockFromJson(it) }, rev = o.optInt("rev", 0)
                 )
             }.getOrElse { discarded++; null }
         }
@@ -170,6 +189,7 @@ class Store private constructor(private val app: Context) {
             JSONObject().put("id", w.id).put("kind", w.kind.name).put("name", w.name).put("addedAt", w.addedAt)
                 .put("albumId", w.albumId ?: JSONObject.NULL).put("origW", w.origW).put("origH", w.origH)
                 .put("outMode", w.outMode.name).put("outW", w.outW).put("outH", w.outH).put("dock", w.dock.toJson()).put("rev", w.rev)
+                .put("lock", w.lock?.toJson() ?: JSONObject.NULL)
         }))
         root.put("albums", JSONArray(_albums.value.map {
             JSONObject().put("id", it.id).put("name", it.name).put("kind", it.kind.name).put("slide", it.slide)
@@ -278,8 +298,15 @@ class Store private constructor(private val app: Context) {
             try {
                 file(id).copyTo(file(newId), overwrite = true)
                 if (thumb(id).exists()) thumb(id).copyTo(thumb(newId), overwrite = true)
-                added.add(src.copy(id = newId, kind = kind, albumId = albumId, addedAt = System.currentTimeMillis()))
-            } catch (e: Exception) { file(newId).delete(); thumb(newId).delete() }
+                val copiedLock = src.lock?.let { config ->
+                    config.imageId?.let { asset ->
+                        val copyId = "lock_" + newId
+                        file(asset).copyTo(file(copyId), overwrite = true)
+                        config.copy(imageId = copyId)
+                    } ?: config
+                }
+                added.add(src.copy(id = newId, kind = kind, albumId = albumId, addedAt = System.currentTimeMillis(), lock = copiedLock))
+            } catch (e: Exception) { file(newId).delete(); thumb(newId).delete(); file("lock_" + newId).delete() }
         }
         _walls.update { it + added.map { w -> w.copy(albumId = validAlbumId(w.albumId, w.kind)) } }
         persist()
@@ -348,9 +375,11 @@ class Store private constructor(private val app: Context) {
     }
 
     fun remove(ids: Collection<String>) {
+        val assets = _walls.value.filter { it.id in ids }.mapNotNull { it.lock?.imageId }
         for (id in ids) { file(id).delete(); thumb(id).delete() }
         _walls.update { list -> list.filter { it.id !in ids } }
         persist()
+        assets.forEach { discardLockImage(it) }
     }
 
     fun assignAlbum(ids: Collection<String>, albumId: String?) {

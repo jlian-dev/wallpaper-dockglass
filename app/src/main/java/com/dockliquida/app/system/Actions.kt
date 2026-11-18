@@ -1,5 +1,11 @@
 package com.dockliquida.app.system
 
+import kotlinx.coroutines.CancellationException
+import com.dockliquida.app.data.Store
+import com.dockliquida.app.data.Wall
+import com.dockliquida.app.BuildConfig
+import com.dockliquida.app.glass.GlassParams
+import com.dockliquida.app.render.WallpaperRenderer
 import android.app.WallpaperManager
 import android.content.ContentValues
 import android.content.Context
@@ -26,7 +32,47 @@ enum class WallTarget(val key: String, val label: String) {
     companion object { fun fromKey(k: String) = values().firstOrNull { it.key == k } ?: HOME }
 }
 
+internal class WallpaperRenderException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
 object Actions {
+
+    /** Gera/aplica uma imagem por vez: nunca mantém duas saídas completas simultaneamente. */
+    fun applyWall(
+        ctx: Context, store: Store, wall: Wall, homeParams: GlassParams, target: WallTarget,
+        shouldContinue: () -> Boolean = { true }
+    ): Boolean {
+        val steps = wallpaperSteps(wall, homeParams, target, BuildConfig.DEBUG)
+        var appliedHome = false
+        for (step in steps) {
+            if (!shouldContinue()) return false
+            val destination = step.target
+            val source = store.file(step.imageId)
+            val p = step.params
+            try {
+                val bitmap = try {
+                    WallpaperRenderer.renderFull(source, wall.outW, wall.outH, p, withDock = step.withDock)
+                        ?: throw WallpaperRenderException("Não foi possível gerar a imagem.")
+                } catch (e: OutOfMemoryError) {
+                    throw WallpaperRenderException("Memória insuficiente para gerar a imagem.", e)
+                } catch (e: Exception) {
+                    if (e is WallpaperRenderException) throw e
+                    throw WallpaperRenderException("Não foi possível ler a imagem: ${e.message}", e)
+                }
+                try {
+                    if (!shouldContinue()) return false
+                    applyWallpaper(ctx, bitmap, destination)
+                } finally { bitmap.recycle() }
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                if (appliedHome) throw IllegalStateException(
+                    "Tela inicial aplicada, mas houve falha no bloqueio. Tente novamente. ${e.message}", e
+                )
+                throw e
+            }
+            if (destination == WallTarget.HOME) appliedHome = true
+        }
+        return true
+    }
 
     /** Resolução FÍSICA da tela (a mesma da tela inicial real). Usada pelo modo "Tela deste aparelho". */
     fun deviceSize(ctx: Context): Pair<Int, Int> {
