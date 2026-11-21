@@ -46,7 +46,9 @@ object Actions {
         for (step in steps) {
             if (!shouldContinue()) return false
             val destination = step.target
-            val source = store.file(step.imageId)
+            // Se a foto própria do bloqueio sumiu do disco, usa a foto principal (com o enquadramento do bloqueio) em
+            // vez de falhar: antes o bloqueio não conseguia mais ser aplicado e a troca automática travava nessa foto.
+            val source = store.file(step.imageId).takeIf { it.isFile } ?: store.file(wall.id)
             val p = step.params
             try {
                 val bitmap = try {
@@ -64,9 +66,12 @@ object Actions {
                 } finally { bitmap.recycle() }
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
-                if (appliedHome) throw IllegalStateException(
-                    "Tela inicial aplicada, mas houve falha no bloqueio. Tente novamente. ${e.message}", e
-                )
+                if (appliedHome) {
+                    val message = "Tela inicial aplicada, mas houve falha no bloqueio. Tente novamente. ${e.message}"
+                    // Mantém o TIPO do erro: na troca automática, WallpaperRenderException faz a fila PULAR esta foto.
+                    // Antes virava IllegalStateException, a troca contava como "falha do sistema" e ficava presa nela.
+                    throw if (e is WallpaperRenderException) WallpaperRenderException(message, e) else IllegalStateException(message, e)
+                }
                 throw e
             }
             if (destination == WallTarget.HOME) appliedHome = true

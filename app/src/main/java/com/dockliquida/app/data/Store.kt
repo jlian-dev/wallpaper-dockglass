@@ -108,7 +108,31 @@ class Store private constructor(private val app: Context) {
     val walls: StateFlow<List<Wall>> = _walls.asStateFlow()
     val albums: StateFlow<List<Album>> = _albums.asStateFlow()
 
-    init { load() }
+    init { load(); repairFiles() }
+
+    /**
+     * Conserta o que uma interrupção (app fechado à força, bateria acabando) pode deixar pela metade:
+     *  1) "<id>.previous": cópia de segurança criada ao TROCAR A FOTO de um wallpaper. Se a troca não terminou (a foto
+     *     nova não existe ou está ilegível) devolve a original, senão o wallpaper ficaria sem imagem; se terminou, apaga a cópia.
+     *  2) Foto própria do bloqueio que sumiu do disco: o wallpaper volta a usar a foto principal no bloqueio. Sem isso
+     *     a aplicação falhava sempre e o backup recusava gerar o arquivo ("imagem de bloqueio ausente") para sempre.
+     */
+    private fun repairFiles() {
+        wallsDir.listFiles { f -> f.name.endsWith(".previous") }?.forEach { previous ->
+            val current = file(previous.name.removeSuffix(".previous"))
+            val currentOk = current.isFile && runCatching { ImageIo.info(current).let { it.width > 0 && it.height > 0 } }.getOrDefault(false)
+            if (currentOk) previous.delete()
+            else {
+                current.delete()
+                if (!previous.renameTo(current)) runCatching { previous.copyTo(current, overwrite = true); previous.delete() }
+            }
+        }
+        fun missingLock(w: Wall) = w.lock?.imageId?.let { !file(it).isFile } == true
+        if (_walls.value.any { missingLock(it) }) {
+            _walls.update { list -> list.map { w -> if (missingLock(w)) w.copy(lock = w.lock?.copy(imageId = null)) else w } }
+            persist()
+        }
+    }
 
     fun file(id: String) = File(wallsDir, id)
     fun thumb(id: String) = File(thumbsDir, "$id.jpg")
@@ -166,7 +190,8 @@ class Store private constructor(private val app: Context) {
                     outMode = OutMode.valueOf(o.optString("outMode", "AUTO")),
                     outW = o.optInt("outW"), outH = o.optInt("outH"),
                     dock = o.optJSONObject("dock")?.let { glassFromJson(it) } ?: GlassParams(),
-                    lock = o.optJSONObject("lock")?.let { lockFromJson(it) }, rev = o.optInt("rev", 0)
+                    lock = o.optJSONObject("lock")?.let { runCatching { lockFromJson(it) }.getOrNull() },   // lock inválido: perde só o bloqueio, não o wallpaper
+                    rev = o.optInt("rev", 0)
                 )
             }.getOrElse { discarded++; null }
         }

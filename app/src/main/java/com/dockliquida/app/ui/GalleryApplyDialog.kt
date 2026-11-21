@@ -29,6 +29,14 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.LaunchedEffect
 
 @Composable
 internal fun GalleryApplyDialog(
@@ -42,6 +50,9 @@ internal fun GalleryApplyDialog(
     val scope = rememberCoroutineScope()
     var applying by remember(wallId) { mutableStateOf(false) }
     var error by remember(wallId) { mutableStateOf<String?>(null) }
+    // Guarda a última mensagem de erro para ela não virar texto vazio enquanto faz o fade de saída.
+    var lastError by remember(wallId) { mutableStateOf("") }
+    LaunchedEffect(error) { error?.let { lastError = it } }
 
     fun apply(target: WallTarget) {
         if (applying) return
@@ -78,28 +89,40 @@ internal fun GalleryApplyDialog(
 
     AlertDialog(
         onDismissRequest = { if (!applying) onDismiss() },
-        title = { Text(if (applying) "Aplicando wallpaper…" else "Aplicar papel de parede") },
+        // O título e o conteúdo trocam com um fade entre "escolher onde aplicar" e "aplicando…".
+        title = { Crossfade(targetState = applying, animationSpec = tween(200), label = "applyTitle") { busyNow ->
+            Text(if (busyNow) "Aplicando wallpaper…" else "Aplicar papel de parede")
+        } },
         text = {
+          Crossfade(targetState = applying, animationSpec = tween(220), label = "applyBody") { busyNow ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (applying) {
+                if (busyNow) {
                     CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
                     Text("Preparando o papel de parede…")
                 } else {
                     Text(if (com.dockliquida.app.BuildConfig.DEBUG || vm.store.wall(wallId)?.lock?.enabled == true)
                         "Inicial com Dock; bloqueio usa a foto e os ajustes salvos no editor."
                     else "Escolha onde aplicar a imagem selecionada com a Dock salva.")
-                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    for (target in WallTarget.values()) {
-                        FilledTonalButton(onClick = { apply(target) }, modifier = Modifier.fillMaxWidth()) {
+                    AnimatedVisibility(
+                        visible = error != null,
+                        enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+                        exit = fadeOut(tween(120)) + shrinkVertically(tween(180))
+                    ) { Text(error ?: lastError, color = MaterialTheme.colorScheme.error) }
+                    for ((index, target) in WallTarget.values().withIndex()) {
+                        // Os botões entram em cascata e afundam ao toque.
+                        FilledTonalButton(onClick = { apply(target) }, modifier = Modifier.cascadeIn(index).fillMaxWidth().pressScale()) {
                             Text(target.label)
                         }
                     }
                 }
             }
+          }
         },
         confirmButton = {},
         dismissButton = {
-            if (!applying) TextButton(onClick = onDismiss) { Text("Cancelar") }
+            AnimatedVisibility(visible = !applying, enter = fadeIn(tween(180)), exit = fadeOut(tween(120))) {
+                TextButton(onClick = onDismiss) { Text("Cancelar") }
+            }
         }
     )
 }

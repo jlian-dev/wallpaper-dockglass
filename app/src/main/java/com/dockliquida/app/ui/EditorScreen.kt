@@ -106,6 +106,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 
 
 /*
@@ -252,7 +254,11 @@ fun EditorScreen(vm: EditorVM, wallId: String, onClose: () -> Unit) {
             ) {
                 Text("Aplicar wallpaper em", style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(bottom = 6.dp))
-                if (com.dockliquida.app.BuildConfig.DEBUG || vm.lockEnabled) {
+                AnimatedVisibility(
+                    visible = com.dockliquida.app.BuildConfig.DEBUG || vm.lockEnabled,
+                    enter = fadeIn(tween(200)) + expandVertically(tween(240, easing = FastOutSlowInEasing)),
+                    exit = fadeOut(tween(120)) + shrinkVertically(tween(200, easing = FastOutSlowInEasing))
+                ) {
                     Text("Inicial com Dock • Bloqueio com sua edição independente, sem Dock", style = MaterialTheme.typography.bodyMedium)
                 }
                 WallTarget.values().forEach { target ->
@@ -314,17 +320,30 @@ private fun EditorPreviews(vm: EditorVM, modifier: Modifier) {
     Column(modifier.fillMaxWidth().padding(top = 62.dp)) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Row(Modifier.fillMaxSize()) {
-                if (split) LockScreenPreviewPane(vm, Modifier.weight(1f).fillMaxHeight())
+                // O painel do bloqueio entra deslizando da esquerda com fade e sai do mesmo jeito. (A prévia principal
+                // muda de largura de uma vez só: animar o tamanho dela refaria a imagem a cada quadro.)
+                AnimatedVisibility(
+                    visible = split,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    enter = fadeIn(tween(260)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it / 5 },
+                    exit = fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 5 }
+                ) { LockScreenPreviewPane(vm, Modifier.fillMaxSize()) }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
                     if (split) Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
-                        Text("Inicial", style = MaterialTheme.typography.labelLarge)
+                        Text("Inicial", Modifier.cascadeIn(0), style = MaterialTheme.typography.labelLarge)
                     }
                     PreviewArea(vm, Modifier.weight(1f))
                 }
             }
-            if (vm.lockEnabled && !vm.lockPreviewVisible) {
-                LockScreenPreviewRestore(vm, Modifier.align(Alignment.CenterStart).padding(start = 12.dp))
-            }
+            // O botão para reabrir a prévia do bloqueio surge/some com escala (mola) + fade.
+            // Nome completo de propósito: aqui estamos num Box DENTRO de uma Column, e o Kotlin escolheria a versão
+            // ColumnScope.AnimatedVisibility (da Column de fora), que o Compose proíbe. Assim usa a função "solta".
+            androidx.compose.animation.AnimatedVisibility(
+                visible = vm.lockEnabled && !vm.lockPreviewVisible,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp),
+                enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)),
+                exit = fadeOut(tween(120)) + scaleOut(tween(120))
+            ) { LockScreenPreviewRestore(vm) }
         }
         // Legenda como na versão anterior: tamanho, % da prévia e aviso se a foto estiver muito ampliada
         val up = vm.upscale()

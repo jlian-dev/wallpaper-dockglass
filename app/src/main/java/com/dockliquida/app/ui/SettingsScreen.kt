@@ -60,6 +60,8 @@ import kotlinx.coroutines.withContext
 import android.widget.Toast
 import android.content.ActivityNotFoundException
 import com.dockliquida.app.system.BatteryOptimization
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 
 @Composable
 private fun SwitchRow(title: String, sub: String, on: Boolean, onChange: (Boolean) -> Unit) {
@@ -292,11 +294,14 @@ fun SettingsScreen(vm: AppVM, bottomPad: Dp) {
                 "Salva num único arquivo .${Backup.EXT} as suas imagens, álbuns, ajustes de cada dock e preferências.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(
-                backupFolder?.let { "Pasta de backup: ${BackupLocation.label(it)}" }
-                    ?: "No primeiro backup, escolha a pasta onde os arquivos serão salvos.",
-                style = MaterialTheme.typography.bodySmall
-            )
+            // O rótulo da pasta troca com um fade quando você escolhe/altera a pasta.
+            Crossfade(targetState = backupFolder, animationSpec = tween(250), label = "backupFolderLabel") { folder ->
+                Text(
+                    folder?.let { "Pasta de backup: ${BackupLocation.label(it)}" }
+                        ?: "No primeiro backup, escolha a pasta onde os arquivos serão salvos.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Button(onClick = {
                 val folder = backupFolder
                 if (folder == null || !BackupLocation.canWrite(ctx, folder)) {

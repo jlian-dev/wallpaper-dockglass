@@ -32,10 +32,34 @@ object Backup {
     const val EXT = "dckl"
     private const val MAGIC = "DockLiquidaBackup"
     private const val VERSION = 2
+    private const val MAX_TEXT_BYTES = 32L * 1024 * 1024        // manifest/biblioteca/preferências: 32 MB já é enorme
+    private const val MAX_IMAGE_BYTES = 512L * 1024 * 1024      // uma foto dentro do backup
+    private const val MAX_ENTRIES = 50_000                      // quantos arquivos o backup pode ter
     private val ID_RE = Regex("[A-Za-z0-9_-]{1,40}")               // só aceita nomes de arquivo "seguros" (evita caminhos maliciosos)
 
     /** Nome sugerido no seletor de arquivos, ex.: DockLiquida_2026-11-12_1430.dckl */
     fun suggestedName(): String = "DockLiquida_" + SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date()) + "." + EXT
+
+    /**
+     * Copia no máximo `max` bytes. Arquivo maior que isso = backup recusado. Protege contra um .dckl corrompido ou
+     * malicioso (o zip diz ser pequeno mas "explode" ao abrir) que encheria a memória ou o armazenamento do aparelho.
+     */
+    private fun java.io.InputStream.copyLimited(out: java.io.OutputStream, max: Long) {
+        val buf = ByteArray(16 * 1024)
+        var total = 0L
+        while (true) {
+            val n = read(buf)
+            if (n < 0) break
+            total += n
+            if (total > max) throw IllegalStateException("Backup inválido: um dos arquivos internos é grande demais.")
+            out.write(buf, 0, n)
+        }
+    }
+    private fun java.io.InputStream.readLimited(max: Long): String {
+        val out = java.io.ByteArrayOutputStream()
+        copyLimited(out, max)
+        return out.toString(Charsets.UTF_8.name())
+    }
 
     private fun validatePrefs(json: String) {
         val root = JSONObject(json)
@@ -84,18 +108,20 @@ object Backup {
         val tmp = File(ctx.cacheDir, "restore_${System.currentTimeMillis()}").apply { mkdirs() }
         try {
             var manifest: String? = null; var library: String? = null; var prefsJson: String? = null
+            var entries = 0
             val input = ctx.contentResolver.openInputStream(uri) ?: throw IllegalStateException("Não foi possível abrir o arquivo.")
             ZipInputStream(BufferedInputStream(input)).use { zip ->
                 while (true) {
                     val e = zip.nextEntry ?: break
+                    if (++entries > MAX_ENTRIES) throw IllegalStateException("Backup inválido: arquivos demais.")
                     val name = e.name
                     when {
                         e.isDirectory -> {}
-                        name == "manifest.json" -> manifest = zip.readBytes().toString(Charsets.UTF_8)
-                        name == "library.json" -> library = zip.readBytes().toString(Charsets.UTF_8)
-                        name == "prefs.json" -> prefsJson = zip.readBytes().toString(Charsets.UTF_8)
+                        name == "manifest.json" -> manifest = zip.readLimited(MAX_TEXT_BYTES)
+                        name == "library.json" -> library = zip.readLimited(MAX_TEXT_BYTES)
+                        name == "prefs.json" -> prefsJson = zip.readLimited(MAX_TEXT_BYTES)
                         name.startsWith("walls/") && ID_RE.matches(name.removePrefix("walls/")) ->
-                            FileOutputStream(File(tmp, name.removePrefix("walls/"))).use { zip.copyTo(it) }
+                            FileOutputStream(File(tmp, name.removePrefix("walls/"))).use { zip.copyLimited(it, MAX_IMAGE_BYTES) }
                     }
                     zip.closeEntry()
                 }
