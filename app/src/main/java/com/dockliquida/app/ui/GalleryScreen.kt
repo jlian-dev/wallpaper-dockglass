@@ -155,7 +155,7 @@ fun GalleryScreen(kind: Kind, vm: AppVM, onOpen: (String) -> Unit, onBack: () ->
                                 GlassIconButton(Icons.Rounded.Close, "Cancelar seleção", { selected = emptySet() })
                                 Text("${if (selected.isNotEmpty()) selected.size else lastCount} selecionada(s)", Modifier.weight(1f).padding(start = 16.dp), style = MaterialTheme.typography.titleMedium)
                                 if (selected.size == 1) {
-                                    GlassAction("Aplicar", { applyingId = selected.single() }, icon = Icons.Rounded.Check)
+                                    GlassAction("Aplicar", { applyingId = selected.singleOrNull() }, icon = Icons.Rounded.Check)
                                 }
                             }
                             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

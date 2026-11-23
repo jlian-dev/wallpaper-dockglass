@@ -96,6 +96,15 @@ internal fun glassFromJson(o: JSONObject): GlassParams {
     )
 }
 
+private const val THUMB_SIDE = 360
+
+internal fun thumbnailSize(width: Int, height: Int): Pair<Int, Int> {
+    val longest = maxOf(width, height)
+    if (longest <= THUMB_SIDE) return width to height
+    fun scaled(side: Int) = (side.toLong() * THUMB_SIDE / longest).toInt().coerceAtLeast(1)
+    return scaled(width) to scaled(height)
+}
+
 class Store private constructor(private val app: Context) {
 
     private val wallsDir = File(app.filesDir, "walls").apply { mkdirs() }
@@ -304,11 +313,24 @@ class Store private constructor(private val app: Context) {
     }
 
     private fun makeThumb(id: String) {
-        val bmp = ImageIo.decodeMaxSide(file(id), 360) ?: return
-        val scale = 360f / maxOf(bmp.width, bmp.height)
-        val t = if (scale < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true) else bmp
-        FileOutputStream(thumb(id)).use { t.compress(Bitmap.CompressFormat.JPEG, 85, it) }
-        if (t !== bmp) t.recycle(); bmp.recycle()
+        val bmp = ImageIo.decodeMaxSide(file(id), THUMB_SIDE) ?: return
+        var thumbnail = bmp
+        try {
+            val (width, height) = thumbnailSize(bmp.width, bmp.height)
+            if (width != bmp.width || height != bmp.height) {
+                thumbnail = Bitmap.createScaledBitmap(bmp, width, height, true)
+            }
+            val tmp = File.createTempFile("thumb-", ".tmp", thumbsDir)
+            try {
+                tmp.outputStream().use { output ->
+                    check(thumbnail.compress(Bitmap.CompressFormat.JPEG, 85, output)) { "Não foi possível gerar a miniatura." }
+                }
+                check(tmp.renameTo(thumb(id))) { "Não foi possível salvar a miniatura." }
+            } finally { tmp.delete() }
+        } finally {
+            if (thumbnail !== bmp) thumbnail.recycle()
+            bmp.recycle()
+        }
     }
 
     /**

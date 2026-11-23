@@ -2,8 +2,11 @@ package com.dockliquida.app.data
 
 import android.content.Context
 import android.net.Uri
+import com.dockliquida.app.render.ImageIo
 import com.dockliquida.app.system.RotationWorker
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.json.JSONArray
@@ -14,9 +17,19 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+
+/** Verifica todas as fotos antes de entrar na etapa que substitui a biblioteca. */
+internal fun verifyBackupImages(dir: File, ids: Set<String>, readableHeader: (File) -> Boolean) {
+    for (id in ids) {
+        val image = File(dir, id)
+        require(image.isFile && image.length() > 0) { "Backup incompleto: falta uma foto da biblioteca ($id)." }
+        require(readableHeader(image)) { "Backup inválido: não foi possível ler a foto $id." }
+    }
+}
 
 /*
  * Backup.kt — arquivo de backup `.dckl` (Dock Líquida).
@@ -65,7 +78,16 @@ object Backup {
         val root = JSONObject(json)
         for (key in root.keys()) {
             val entry = root.getJSONObject(key)
-            when (entry.getString("t")) {
+            val type = entry.getString("t")
+            val expected = when (key) {
+                "tema", "lastWall", "lastDock", "trocaAlvo" -> "s"
+                "qualidade" -> "f"
+                "trocaHoras" -> "i"
+                "dockIndividual", "glassFull", "dynamicColors", "amoled", "trocaAtiva" -> "b"
+                else -> type
+            }
+            require(type == expected) { "Backup inválido: tipo incorreto para a preferência '$key'." }
+            when (type) {
                 "b" -> entry.getBoolean("v")
                 "i" -> entry.getInt("v")
                 "l" -> entry.getLong("v")
@@ -76,26 +98,65 @@ object Backup {
         }
     }
 
+    /** Lista os arquivos a partir do próprio índice que será gravado ou restaurado. */
+    private fun requiredAssets(library: JSONObject): Set<String> {
+        val records = library.getJSONArray("walls")
+        val mainIds = mutableSetOf<String>()
+        val assets = linkedSetOf<String>()
+        for (i in 0 until records.length()) {
+            val wall = records.getJSONObject(i)
+            val id = wall.getString("id")
+            require(ID_RE.matches(id) && mainIds.add(id)) { "Backup inválido: identificador de wallpaper inválido ou repetido." }
+            Kind.valueOf(wall.optString("kind", "FIXED"))
+            OutMode.valueOf(wall.optString("outMode", "AUTO"))
+            require(wall.getInt("origW") > 0 && wall.getInt("origH") > 0 &&
+                wall.getInt("outW") > 0 && wall.getInt("outH") > 0) { "Backup inválido: dimensões de wallpaper inválidas." }
+            assets.add(id)
+            if (!wall.isNull("lock")) {
+                lockFromJson(wall.getJSONObject("lock")).imageId?.let { assets.add(it) }
+            }
+        }
+        val albums = library.getJSONArray("albums")
+        val ids = mutableSetOf<String>()
+        for (i in 0 until albums.length()) {
+            val album = albums.getJSONObject(i)
+            Kind.valueOf(album.optString("kind", "FIXED"))
+            require(ids.add(album.getString("id"))) { "Backup inválido: álbum repetido." }
+        }
+        return assets
+    }
+
     /** Grava o backup no destino escolhido pelo usuário. Devolve quantas imagens foram incluídas. */
     suspend fun export(ctx: Context, uri: Uri): Int = withContext(Dispatchers.IO) {
         val store = Store.get(ctx); val prefs = Prefs.get(ctx)
-        val walls = store.walls.value.filter { store.file(it.id).exists() }
+        val library = store.exportIndexJson()
+        val index = JSONObject(library)
+        val wallCount = index.getJSONArray("walls").length()
+        val assets = requiredAssets(index)
+        check(assets.size <= MAX_ENTRIES - 3) { "A biblioteca excede a quantidade de arquivos aceita pelo backup." }
         val out = ctx.contentResolver.openOutputStream(uri) ?: throw IllegalStateException("Não foi possível abrir o destino.")
         ZipOutputStream(BufferedOutputStream(out)).use { zip ->
-            fun text(name: String, s: String) { zip.putNextEntry(ZipEntry(name)); zip.write(s.toByteArray(Charsets.UTF_8)); zip.closeEntry() }
+            fun text(name: String, s: String) {
+                val bytes = s.toByteArray(Charsets.UTF_8)
+                check(bytes.size.toLong() <= MAX_TEXT_BYTES) { "Os dados da biblioteca excedem o tamanho aceito pelo backup." }
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
             text("manifest.json", JSONObject().put("magic", MAGIC).put("version", VERSION)
-                .put("createdAt", System.currentTimeMillis()).put("images", walls.size).toString())
-            text("library.json", store.exportIndexJson())
+                .put("createdAt", System.currentTimeMillis()).put("images", wallCount).toString())
+            text("library.json", library)
             text("prefs.json", prefs.exportJson())
-            val assets = (walls.map { it.id } + walls.mapNotNull { it.lock?.imageId }).distinct()
             for (id in assets) {
-                check(store.file(id).isFile) { "Imagem de bloqueio ausente. Selecione a foto novamente antes do backup." }
+                currentCoroutineContext().ensureActive()
+                val file = store.file(id)
+                check(file.isFile && file.length() > 0) { "Backup interrompido: uma foto da biblioteca está ausente ou vazia ($id)." }
                 zip.putNextEntry(ZipEntry("walls/$id"))
-                store.file(id).inputStream().use { it.copyTo(zip) }
+                file.inputStream().use { it.copyLimited(zip, MAX_IMAGE_BYTES) }
                 zip.closeEntry()
             }
         }
-        walls.size
+        wallCount
     }
 
     /**
@@ -105,16 +166,21 @@ object Backup {
      */
     suspend fun import(ctx: Context, uri: Uri): Int = withContext(Dispatchers.IO) {
         val store = Store.get(ctx); val prefs = Prefs.get(ctx)
-        val tmp = File(ctx.cacheDir, "restore_${System.currentTimeMillis()}").apply { mkdirs() }
+        val restoreContext = currentCoroutineContext()
+        val tmp = File(ctx.cacheDir, "restore_${UUID.randomUUID()}")
+        check(tmp.mkdir()) { "Não foi possível preparar a restauração." }
         try {
             var manifest: String? = null; var library: String? = null; var prefsJson: String? = null
             var entries = 0
+            val seen = HashSet<String>()
             val input = ctx.contentResolver.openInputStream(uri) ?: throw IllegalStateException("Não foi possível abrir o arquivo.")
             ZipInputStream(BufferedInputStream(input)).use { zip ->
                 while (true) {
+                    restoreContext.ensureActive()
                     val e = zip.nextEntry ?: break
                     if (++entries > MAX_ENTRIES) throw IllegalStateException("Backup inválido: arquivos demais.")
                     val name = e.name
+                    if (!e.isDirectory) require(seen.add(name)) { "Backup inválido: arquivo interno repetido." }
                     when {
                         e.isDirectory -> {}
                         name == "manifest.json" -> manifest = zip.readLimited(MAX_TEXT_BYTES)
@@ -129,28 +195,31 @@ object Backup {
             val m = manifest ?: throw IllegalStateException("Este arquivo não é um backup do Dock Líquida.")
             val head = JSONObject(m)
             if (head.optString("magic") != MAGIC) throw IllegalStateException("Este arquivo não é um backup do Dock Líquida.")
-            if (head.optInt("version") > VERSION) throw IllegalStateException("Backup feito por uma versão mais nova do app. Atualize o app primeiro.")
+            val version = head.getInt("version")
+            if (version > VERSION) throw IllegalStateException("Backup feito por uma versão mais nova do app. Atualize o app primeiro.")
+            require(version >= 1) { "Versão de backup inválida." }
             val lib = library ?: throw IllegalStateException("Backup incompleto (sem biblioteca).")
             val libraryRoot = JSONObject(lib)
             if (libraryRoot.opt("walls") !is JSONArray || libraryRoot.opt("albums") !is JSONArray)
                 throw IllegalStateException("Backup inválido (estrutura da biblioteca).")
-            // Valida as fotos independentes ANTES de substituir a biblioteca atual.
             val records = libraryRoot.getJSONArray("walls")
-            for (i in 0 until records.length()) {
-                records.getJSONObject(i).optJSONObject("lock")?.let { obj ->
-                    lockFromJson(obj).imageId?.let { id ->
-                        require(File(tmp, id).isFile) { "Backup incompleto: falta uma foto de bloqueio." }
-                    }
-                }
+            val assets = requiredAssets(libraryRoot)
+            require(!head.has("images") || head.getInt("images") == records.length()) { "Backup incompleto: a contagem de wallpapers difere do índice." }
+            verifyBackupImages(tmp, assets) { image ->
+                restoreContext.ensureActive()
+                val info = ImageIo.info(image)
+                info.width > 0 && info.height > 0
             }
             prefsJson?.let { validatePrefs(it) }
 
             // Segura a trava da troca automática: se uma troca estiver renderizando agora, esperamos ela terminar, e
             // nenhuma começa enquanto as imagens estão sendo apagadas e trocadas (antes a troca lia arquivos sumindo).
             synchronized(RotationWorker.applyLock) {
+                restoreContext.ensureActive()
                 store.wipeAll()                                      // a partir daqui os dados atuais são substituídos
-                tmp.listFiles()?.forEach { f ->
-                    val dst = File(store.wallsDir(), f.name)
+                for (id in assets) {
+                    val f = File(tmp, id)
+                    val dst = File(store.wallsDir(), id)
                     if (!f.renameTo(dst)) f.copyTo(dst, overwrite = true)
                 }
                 store.restoreIndex(lib)

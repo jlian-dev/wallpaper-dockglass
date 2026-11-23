@@ -396,7 +396,10 @@ private fun PreviewArea(vm: EditorVM, modifier: Modifier) {
                 contentAlignment = Alignment.Center
             ) {
                 val bmp = vm.preview
-                if (bmp != null) {
+                val previewError = vm.previewError
+                if (previewError != null) {
+                    Text(previewError, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
+                } else if (bmp != null) {
                     val g = vm.geometry()
                     val d = LocalDensity.current
                     val shape = RoundedCornerShape(24.dp)

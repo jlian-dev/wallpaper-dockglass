@@ -16,6 +16,7 @@ import com.dockliquida.app.data.Prefs
 import com.dockliquida.app.data.Store
 import com.dockliquida.app.data.Wall
 import com.dockliquida.app.data.glassFromJson
+import com.dockliquida.app.data.readDockPresetText
 import com.dockliquida.app.data.toJson
 import org.json.JSONObject
 import com.dockliquida.app.glass.GlassParams
@@ -61,6 +62,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
     var outW by mutableIntStateOf(0); private set
     var outH by mutableIntStateOf(0); private set
     var preview by mutableStateOf<Bitmap?>(null); private set
+    var previewError by mutableStateOf<String?>(null); private set
     var style by mutableStateOf<GlassStyle?>(null); private set      // estilo "puro" selecionado (some ao mexer num controle)
     var busy by mutableStateOf<String?>(null); private set           // texto do carregando (null = livre)
     var message by mutableStateOf<String?>(null)                      // aviso curto (a tela mostra um Toast e limpa)
@@ -209,13 +211,13 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
                 } catch (e: OutOfMemoryError) {
                     pipeline.clear()
                     withContext(Dispatchers.Main) {
-                        if (r.version == renderVersion) message = "Memória insuficiente para gerar a prévia."
+                        if (r.version == renderVersion) previewError = "Memória insuficiente para gerar a prévia."
                     }
                     continue
                 } catch (e: Exception) {
                     pipeline.clear()
                     withContext(Dispatchers.Main) {
-                        if (r.version == renderVersion) message = "Não foi possível gerar a prévia."
+                        if (r.version == renderVersion) previewError = "Não foi possível gerar a prévia."
                     }
                     continue
                 }
@@ -223,6 +225,7 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
                 try {
                     withContext(Dispatchers.Main) {
                         if (r.version == renderVersion && image === r.img && wallRef != null) {
+                            previewError = null
                             preview = bmp
                             published = true
                         }
@@ -241,14 +244,23 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
         lockSettleJob?.cancel(); lockVersion++; lockRequests.trySend(null)
         lockConfig = w.lock; lockPreview = null; lockPreviewError = null; lockPreviewVisible = true
         renderVersion++
-        wall = w; wallRef = w; preview = null; image = null; style = null
+        wall = w; wallRef = w; preview = null; previewError = null; image = null; style = null
         params = prefs.dockFor(w); outMode = w.outMode; outW = w.outW; outH = w.outH
         requestLockPreview()
         val loadVersion = ++imageLoadVersion
         viewModelScope.launch {
-            val bmp = withContext(Dispatchers.IO) { ImageIo.decodeMaxSide(store.file(id), 2560) }   // 2560 px: sobra para a prévia
+            val bmp = try {
+                withContext(Dispatchers.IO) { ImageIo.decodeMaxSide(store.file(id), 2560) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: OutOfMemoryError) {
+                if (loadVersion == imageLoadVersion) previewError = "Memória insuficiente para abrir a prévia."
+                return@launch
+            } catch (e: Exception) {
+                null
+            }
             if (loadVersion != imageLoadVersion) { bmp?.recycle(); return@launch }
-            if (bmp == null) { message = "Não foi possível abrir a imagem."; return@launch }
+            if (bmp == null) { previewError = "Não foi possível abrir a imagem."; return@launch }
             image = LoadedImage(bmp, w.origW, w.origH, ++imageCounter)
             requestRender()
         }
@@ -461,13 +473,15 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
 
     fun importDock(uri: Uri) {
         if (wallRef == null) { message = "Abra um wallpaper antes de importar uma Dock."; return }
+        val session = imageLoadVersion
         viewModelScope.launch {
             try {
                 val text = withContext(Dispatchers.IO) {
                     ctx.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
-                        reader.readText().also { require(it.length <= 64_000) { "Arquivo muito grande para um preset." } }
+                        readDockPresetText(reader)
                     } ?: error("Não foi possível abrir o arquivo.")
                 }
+                if (session != imageLoadVersion) return@launch
                 val root = JSONObject(text)
                 require(root.optString("format") == "dockliquida.dock" && root.optInt("version") == 1) {
                     "Este arquivo não é um preset de Dock compatível."
@@ -484,7 +498,11 @@ class EditorVM(app: Application) : AndroidViewModel(app) {
                     panY = current.panY, wpBlur = current.wpBlur
                 ) }
                 message = "Dock importada e aplicada ao wallpaper atual."
-            } catch (e: Exception) { message = "Não foi possível importar: ${e.message}" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (session == imageLoadVersion) message = "Não foi possível importar: ${e.message}"
+            }
         }
     }
 
